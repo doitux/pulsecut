@@ -13,7 +13,7 @@ from xml.sax.saxutils import escape
 import numpy as np
 
 from .i18n import L as _t
-from .util import FPS, clean_env, ff_path, ffmpeg_cmd, find_font, fmt_dur, log, run, tc, write_png
+from .util import FPS, clean_env, ff_path, ffmpeg_cmd, find_font, md5, run, tc, write_png
 
 
 class KdenliveWriter:
@@ -304,7 +304,17 @@ def make_title_png(out, lines, band_y, band_h, tmpdir, W=1920, H=1080):
     write_png(out, (np.clip(np.concatenate([rgb, a_o], axis=2), 0, 1) * 255 + 0.5).astype(np.uint8))
 
 
-def title_pngs(titles, outdir, tmpdir, W, H):
+def title_pngs(titles, outdir, tmpdir, W, H, stil=None):
+    """Titelbilder in der gewählten Gestaltung (Titel-Bibliothek), sonst klassisches Band."""
+    if stil is not None:
+        from . import titel as TI
+        res = []
+        for j, t in enumerate(titles):
+            p = Path(outdir) / f"titel_{j}_{W}x{H}_{md5(json.dumps([t['text'], t.get('unter', ''), stil], sort_keys=True))[:10]}.png"
+            if not p.exists():
+                write_png(p, TI.render(t["text"], t.get("unter", ""), W, H, stil, t.get("art", "titel"), tmpdir))
+            res.append((p, t["t0"], t["t1"]))
+        return res
     res = []
     for j, t in enumerate(titles):
         lines = [(t["text"], 92 if j == 0 else 60, True)] + ([(t["unter"], 46, False)] if t.get("unter") else [])
@@ -464,7 +474,7 @@ def write_project(pr, path, W=1920, H=1080, mit_marker=True):
             "seekable": 1, "kdenlive:clipname": "", "kdenlive:clip_type": 1, "video_index": -1,
             "mute_on_pause": 0}, "bin_props": {"kdenlive:markers": json.dumps(markers, indent=1)}})
         kid += 1
-    titles = title_pngs(info["titel"], pr.dirs["titel"], pr.dirs["tmp"], W, H)
+    titles = title_pngs(info["titel"], pr.dirs["titel"], pr.dirs["tmp"], W, H, pr.titelstil())
     title_items = []
     for png, t0, t1 in titles:
         n = int(round((t1 - t0) * FPS))
@@ -666,7 +676,7 @@ def render_ffmpeg(pr, out, fmt, progress=None):
     ins += ["-i", str(video)]
     vchain = f"[{vin}:v]null[v0]"
     last = "v0"
-    for j, (png, t0, t1) in enumerate(title_pngs(info["titel"], pr.dirs["titel"], pr.dirs["tmp"], W, H)):
+    for j, (png, t0, t1) in enumerate(title_pngs(info["titel"], pr.dirs["titel"], pr.dirs["tmp"], W, H, pr.titelstil())):
         ins += ["-loop", "1", "-t", f"{t1:.3f}", "-i", str(png)]
         ii = vin + 1 + j
         vchain += (f";[{ii}:v]format=rgba,fade=t=in:st={t0:.2f}:d=0.6:alpha=1,fade=t=out:st={t1 - 0.6:.2f}:d=0.6:alpha=1[t{j}];"

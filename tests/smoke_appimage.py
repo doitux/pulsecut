@@ -133,7 +133,41 @@ def main():
         target = os.environ.get("SMOKE_SCREENSHOT")
         if target:
             Path(target).write_bytes(shot.read_bytes())
+
+        # automatic graphics fallback: pretend the window stayed white, Pulsecut restarts itself – afterwards
+        # external programs (ffmpeg) must still work
+        port = free_port()
+        renv = dict(env, PULSECUT_TEST_LEER="gpu")
+        rlog = open(work / "restart.log", "w")
+        rp = subprocess.Popen([str(app), "--port", str(port)], env=renv, stdout=rlog, stderr=subprocess.STDOUT)
+        try:
+            z = None
+            for _ in range(240):
+                time.sleep(0.5)
+                if "Grafik: opengl" in (work / "restart.log").read_text(errors="replace"):
+                    try:
+                        z = get_url(f"http://127.0.0.1:{port}/api/zustand")
+                        break
+                    except OSError:
+                        pass
+            log_text = (work / "restart.log").read_text(errors="replace")
+            print("restart:", log_text[-800:])
+            assert z is not None, "no restart with the next graphics level"
+            print("tools after restart:", z["werkzeuge"])
+            assert z["werkzeuge"].get("ffmpeg_ok") and z["werkzeuge"].get("vpx"), "ffmpeg broken after the restart"
+        finally:
+            rp.terminate()
+            try:
+                rp.wait(20)
+            except subprocess.TimeoutExpired:
+                rp.kill()
+            rlog.close()
     print("SMOKE TEST OK")
+
+
+def get_url(url):
+    with urllib.request.urlopen(url, timeout=10) as r:
+        return json.loads(r.read())
 
 
 if __name__ == "__main__":

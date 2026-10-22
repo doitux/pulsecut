@@ -194,6 +194,9 @@ def api_get(path, q):
     if path == "/api/exporte":
         return {"formate": {k: _t(v["label"]) for k, v in EX.FORMATE.items()}, "dateien": pr.d.get("exporte", []),
                 "melt": STATE.tools.get("melt")}
+    if path == "/api/titelstile":
+        from . import titel as TI
+        return {"stile": TI.stil_liste(get_lang()), "schriften": TI.schriften(), "aktuell": pr.titelstil()}
     if path == "/api/ls":
         p = Path(q.get("pfad", [str(Path.home())])[0]).expanduser()
         if not p.is_dir():
@@ -358,6 +361,15 @@ def api_post(path, b, raw=None, ctype=""):
                   "abspann"):
             if k in b:
                 s[k] = b[k]
+        if isinstance(b.get("titelstil"), dict):
+            from .titel import STANDARD, STILE
+            ts = dict(STANDARD, **(s.get("titelstil") or {}))
+            for k in ("stil", "schrift", "farbe", "position"):
+                if k in b["titelstil"]:
+                    ts[k] = str(b["titelstil"][k])[:60]
+            if ts["stil"] not in STILE:
+                ts["stil"] = STANDARD["stil"]
+            s["titelstil"] = ts
         s["k"] = int(s.get("k") or 0)
         s["blende"] = float(np.clip(float(s.get("blende") or 0.5), 0.1, 3.0))
         with pr.lock:
@@ -504,6 +516,15 @@ class Handler(BaseHTTPRequestHandler):
             if p == "/media/mix.ogg":
                 f = pr.music_mix_file()
                 return self._file(f, "audio/ogg") if f else self.send_error(404)
+            m = re.fullmatch(r"/media/titel/(\d)\.png", p)
+            if m:
+                f = pr.titel_vorschau(int(m.group(1)))
+                return self._file(f, "image/png") if f else self.send_error(404)
+            m = re.fullmatch(r"/media/titelstil/([a-z]+)\.png", p)
+            if m:
+                g = lambda k: q.get(k, [""])[0]   # noqa: E731
+                return self._file(pr.stil_galerie(m.group(1), g("schrift"), g("farbe"), g("position") or "unten"),
+                                  "image/png")
             return self.send_error(404)
         except Exception as e:
             traceback.print_exc()

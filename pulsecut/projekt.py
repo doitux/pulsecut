@@ -34,7 +34,8 @@ def default_data(name, videos, musik):
             "ziel_dauer": None, "kuerzen": {}, "sortierung": "zeit", "clips": {},
             "beschreibung": "", "stichworte": [], "abgelehnt": [], "szenen": {}, "szenen_folge": None,
             "schnitt": {"k": 0, "raster": "takt", "uebergang": "hart", "blende": 0.5, "bewegung": False,
-                        "originalton": "auto", "absenken": 5, "titel": name, "untertitel": "", "abspann": ""},
+                        "originalton": "auto", "absenken": 5, "titel": name, "untertitel": "", "abspann": "",
+                        "titelstil": {"stil": "band", "schrift": "", "farbe": "#ffc23d", "position": "unten"}},
             "timeline": None, "erledigt": []}
 
 
@@ -888,9 +889,54 @@ class Projekt:
         D = self.layout.D if self.layout else 0
         out = []
         if s.get("titel"):
-            out.append({"text": s["titel"], "unter": s.get("untertitel", ""), "t0": 0.8, "t1": min(6.5, D * 0.3)})
+            out.append({"text": s["titel"], "unter": s.get("untertitel", ""), "t0": 0.8, "t1": min(6.5, D * 0.3),
+                        "art": "titel"})
         if s.get("abspann"):
-            out.append({"text": s["abspann"], "unter": "", "t0": max(D - 8.0, D * 0.8), "t1": D})
+            out.append({"text": s["abspann"], "unter": "", "t0": max(D - 8.0, D * 0.8), "t1": D, "art": "abspann"})
+        sig = md5(json.dumps([[t["text"], t["unter"]] for t in out] + [self.titelstil()], sort_keys=True))[:10]
+        for j, t in enumerate(out):   # Vorschau-Bild in genau der Gestaltung des Exports
+            t["bild"] = f"/media/titel/{j}.png?k={sig}"
+        return out
+
+    def titelstil(self):
+        from .titel import STANDARD, STILE
+        st = dict(STANDARD, **(self.d["schnitt"].get("titelstil") or {}))
+        if st["stil"] not in STILE:
+            st["stil"] = STANDARD["stil"]
+        return st
+
+    def titel_vorschau(self, j, W=960, H=540):
+        """Titelbild j (0 = Titel, 1 = Abspann) für die Live-Vorschau."""
+        from .export import title_pngs
+        ts = self.titles_info()
+        if j >= len(ts):
+            return None
+        return title_pngs([ts[j]], self.dirs["titel"], self.dirs["tmp"], W, H, self.titelstil())[0][0]
+
+    def stil_galerie(self, sid, schrift="", farbe="", position="unten", W=480, H=270):
+        """Kleines Vorschaubild einer Titel-Gestaltung über einem Bild aus dem Film."""
+        from . import titel as TI
+        from .util import run as _run, write_png
+        s = self.d["schnitt"]
+        stil = {"stil": sid, "schrift": schrift, "farbe": farbe or TI.STANDARD["farbe"], "position": position}
+        key = md5(json.dumps([stil, s.get("titel"), s.get("untertitel"), W, H], sort_keys=True))[:12]
+        out = self.dirs["titel"] / f"galerie_{key}.png"
+        if out.exists():
+            return out
+        bg = None
+        frames = [self.dirs["bilder"] / c.hash / c.ana["ki_frames"][len(c.ana["ki_frames"]) // 2][1]
+                  for c in self.clips if c.ana and c.ana.get("ki_frames") and not c.portrait and c.prio != "raus"]
+        if frames:
+            f = frames[len(frames) // 3]
+            raw = _run(["ffmpeg", "-nostdin", "-v", "error", "-i", str(f), "-vf", f"scale={W}:{H}", "-frames:v", "1",
+                        "-f", "rawvideo", "-pix_fmt", "rgb24", "-"], binary=True, check=False)
+            if raw and len(raw) == W * H * 3:
+                bg = np.frombuffer(raw, np.uint8).reshape(H, W, 3)
+        if bg is None:
+            bg = np.zeros((H, W, 3), np.uint8)
+            bg[:] = (70, 90, 110)
+        rgba = TI.render(s.get("titel") or self.d["name"], s.get("untertitel", ""), W, H, stil, "titel", self.dirs["tmp"])
+        write_png(out, TI.vorschau_auf(bg, rgba))
         return out
 
     def find_shot(self, sid):

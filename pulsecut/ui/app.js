@@ -222,7 +222,7 @@ R.musik = {
   },
   draw() {
     const box = $("#mliste"); if (!box) return;
-    if (!MU.stuecke.length) { box.innerHTML = MU.laeuft ? T("Die Musik wird gerade analysiert …") : `<div class="fehler">${T("Im Musikordner wurde keine Musik gefunden.")}</div>`; return; }
+    if (!MU.stuecke.length || MU.laeuft) { box.innerHTML = MU.laeuft ? T("Die Musik wird gerade analysiert …") : `<div class="fehler">${T("Im Musikordner wurde keine Musik gefunden.")}</div>`; return; }
     box.innerHTML = "";
     MU.stuecke.forEach((t, idx) => {
       const el = document.createElement("div"); el.className = "mtrack" + (t.aktiv ? "" : " inaktiv"); el.id = "mt" + t.i;
@@ -629,7 +629,11 @@ R.schnitt = {
       <div class="box col"><b>${T("Titel & Abspann")}</b>
         <div class="row"><span class="lab">${T("Titel")}</span><input type="text" id="stit" value="${esc(s.titel)}" style="flex:1"></div>
         <div class="row"><span class="lab">${T("Untertitel")}</span><input type="text" id="sunt" value="${esc(s.untertitel)}" style="flex:1"></div>
-        <div class="row"><span class="lab">${T("Abspann")}</span><input type="text" id="sabs" value="${esc(s.abspann)}" style="flex:1" placeholder="${T("z. B. Danke an alle!")}"></div></div>
+        <div class="row"><span class="lab">${T("Abspann")}</span><input type="text" id="sabs" value="${esc(s.abspann)}" style="flex:1" placeholder="${T("z. B. Danke an alle!")}"></div>
+        <div class="row" style="align-items:flex-start"><span class="lab">${T("Gestaltung")}</span><div class="stilgalerie" id="sgal">${T("Lade …")}</div></div>
+        <div class="row"><span class="lab">${T("Schrift")}</span><select id="sfont"></select>
+          <span class="lab" style="margin-left:12px">${T("Akzentfarbe")}</span><input type="color" id="sfarbe" value="${esc((s.titelstil || {}).farbe || "#ffc23d")}">
+          <span class="lab" style="margin-left:12px">${T("Lage")}</span>${seg("spos", [["unten", T("unten")], ["mitte", T("Mitte")]], (s.titelstil || {}).position || "unten")}</div></div>
       ${Z.projekt.timeline ? `<div class="hinweis">${T("Es gibt schon eine Timeline. „Schnitt erstellen“ plant neu – von dir gesperrte Schnitte (🔒) bleiben erhalten.")}</div>` : ""}
       <div class="weiter"><button class="pri gross" id="splan">${T("Schnitt erstellen")} →</button></div>`;
     const save = async b => { await api("/api/schnitt", b); };
@@ -639,12 +643,30 @@ R.schnitt = {
     onSeg($('[data-f="ton"]', m), async v => { await save(v === "aus" ? {originalton: "aus"} : {originalton: "auto", absenken: v === "leiser" ? 5 : 0}); this.render(m); });
     const bl = $("#sbl"); if (bl) { bl.oninput = () => $("#sblv").textContent = komma((+bl.value).toFixed(1)) + " s"; bl.onchange = () => save({blende: +bl.value}); }
     $("#sbew").onchange = e => save({bewegung: e.target.checked});
-    ["stit", "sunt", "sabs"].forEach((id, i) => $("#" + id).onchange = e => save({[["titel", "untertitel", "abspann"][i]]: e.target.value}));
+    ["stit", "sunt", "sabs"].forEach((id, i) => $("#" + id).onchange = async e => { await save({[["titel", "untertitel", "abspann"][i]]: e.target.value}); this.galerie(); });
+    this.galerie(true);
     $("#splan").onclick = async () => {
       const b = $("#splan"); b.disabled = true; b.textContent = T("Plane …");
       try { await api("/api/plan", {behalten: true}); Z = await fetch("/api/zustand").then(r => r.json()); go("timeline"); }
       finally { b.disabled = false; b.textContent = T("Schnitt erstellen") + " →"; }
     };
+  }
+};
+
+R.schnitt.galerie = async function (first) {
+  const box = $("#sgal"); if (!box) return;
+  const d = await api("/api/titelstile"), st = d.aktuell;
+  const q = `schrift=${encodeURIComponent(st.schrift || "")}&farbe=${encodeURIComponent(st.farbe || "")}&position=${st.position}&t=${encodeURIComponent(($("#stit") || {}).value || "")}|${encodeURIComponent(($("#sunt") || {}).value || "")}`;
+  box.innerHTML = d.stile.map(x => `<button class="stilk ${x.id === st.stil ? "on" : ""}" data-s="${x.id}" title="${esc(x.text)}"><img loading="lazy" src="/media/titelstil/${x.id}.png?${q}" alt=""><span>${esc(x.name)}</span></button>`).join("");
+  $$(".stilk", box).forEach(b => b.onclick = async () => { await api("/api/schnitt", {titelstil: {stil: b.dataset.s}}); $$(".stilk", box).forEach(x => x.classList.toggle("on", x === b)); });
+  const sel = $("#sfont");
+  if (first && sel) {
+    const o = f => `<option value="${esc(f)}" ${f === st.schrift ? "selected" : ""}>${esc(f)}</option>`;
+    sel.innerHTML = `<option value="">${T("Standard")}</option>` + (d.schriften.empfohlen.length ? `<optgroup label="${T("Empfohlen")}">${d.schriften.empfohlen.map(o).join("")}</optgroup>` : "") +
+      (d.schriften.weitere.length ? `<optgroup label="${T("Weitere Schriften")}">${d.schriften.weitere.map(o).join("")}</optgroup>` : "");
+    sel.onchange = async () => { await api("/api/schnitt", {titelstil: {schrift: sel.value}}); this.galerie(); };
+    $("#sfarbe").onchange = async e => { await api("/api/schnitt", {titelstil: {farbe: e.target.value}}); this.galerie(); };
+    onSeg($('[data-f="spos"]'), async v => { await api("/api/schnitt", {titelstil: {position: v}}); $$('[data-f="spos"] button').forEach(b => b.classList.toggle("on", b.dataset.v === v)); this.galerie(); });
   }
 };
 
@@ -729,6 +751,8 @@ class Player {
     for (const ti of this.titles) {
       if (t < ti.t0 || t > ti.t1) continue;
       const a = Math.min(1, (t - ti.t0) / 0.6, (ti.t1 - t) / 0.6); g.globalAlpha = Math.max(0, a);
+      const tim = ti.bild ? this.img(ti.bild) : null;   // dasselbe Titelbild wie im Export
+      if (tim) { g.drawImage(tim, 0, 0, this.W, this.H); continue; }
       const y = ti === this.titles[0] ? this.H * 0.64 : this.H * 0.78;
       g.fillStyle = "rgba(0,0,0,.45)"; g.fillRect(0, y - 12, this.W, ti.unter ? 120 : 84);
       g.fillStyle = "#fff"; g.textAlign = "center"; g.shadowColor = "#000"; g.shadowBlur = 6; g.font = "bold 46px 'Noto Sans','DejaVu Sans',sans-serif";

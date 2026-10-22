@@ -59,7 +59,8 @@ def prepare(pr, beschreibung=None, ziel=None, **schnitt):
     pr.d["szenen"] = {}
     pr.d["szenen_folge"] = None
     pr.d["schnitt"].update({"k": 0, "raster": "takt", "uebergang": "hart", "blende": 0.5, "bewegung": False,
-                            "originalton": "auto"})
+                            "originalton": "auto", "absenken": 5,
+                            "titelstil": {"stil": "band", "schrift": "", "farbe": "#ffc23d", "position": "unten"}})
     pr.d["schnitt"].update(schnitt)
     pr.apply_user_clip_settings()
     with pr.lock:

@@ -222,6 +222,10 @@ def test_workflow(app):
         pg.wait_for_selector("#splan")
         pg.click('[data-f=ueb] button[data-v=blende]')
         pg.wait_for_selector("#sbl")
+        pg.wait_for_selector(".stilk[data-s=karte] img")   # title library: pick the "card" style
+        pg.click(".stilk[data-s=karte]")
+        pg.wait_for_selector(".stilk.on[data-s=karte]")
+        assert pg.evaluate("fetch('/api/titelstile').then(r=>r.json())")["aktuell"]["stil"] == "karte"
         pg.fill("#sabs", "Thanks!" if lang == "en" else "Danke!")
         pg.dispatch_event("#sabs", "change")
         pg.wait_for_timeout(300)

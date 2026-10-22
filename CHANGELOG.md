@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+- Title library: 12 styles for title and end credits (band, clean, card, light card, glass, lines, frame, lower
+  third, highlighter, glow, outline, cinema), any installed font, accent colour, position bottom/centre. The step
+  “Cut settings” shows a gallery rendered on a frame of your own film; live preview, Kdenlive project and renders
+  use exactly the same picture.
+- Fix: after the automatic graphics restart, ffmpeg got the AppImage's library paths (“ffmpeg has no VP8”).
+- Music step: the track list appears once click tracks are ready (no stale redraws while preparing).
+
 ## 1.0.4 – 2026-10-22
 - Videos set to “Out” in the video step stay out: the recognition ignores them (the recognition step says how many).
 - Wrongly sorted scenes: the selection under each scene (recognition step) and next to each scene and clip
