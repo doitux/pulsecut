@@ -110,7 +110,11 @@ def main(jobfile):
             from faster_whisper import WhisperModel
             say(f"MODELL Sprache {models['sprache']}")
             wm = WhisperModel(models["sprache"], device="cpu", compute_type="int8")
-            segs, _info = wm.transcribe(a["pfad"], language=a.get("sprache", "de"), vad_filter=True, beam_size=5)
+            # Audio selbst mit ffmpeg dekodieren: unabhängig von der PyAV-Version, die faster-whisper sonst nutzt
+            p = subprocess.run(["ffmpeg", "-nostdin", "-hide_banner", "-loglevel", "error", "-i", a["pfad"], "-vn",
+                                "-ac", "1", "-ar", "16000", "-f", "f32le", "-"], capture_output=True, check=True)
+            audio = np.frombuffer(p.stdout, np.float32).copy()
+            segs, _info = wm.transcribe(audio, language=a.get("sprache", "de"), vad_filter=True, beam_size=5)
             text = " ".join(s.text.strip() for s in segs).strip()
             Path(a["out"]).write_text(text, encoding="utf-8")
             done += 1

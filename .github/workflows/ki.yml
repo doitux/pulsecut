@@ -52,7 +52,10 @@ jobs:
           python -m pytest -m ki tests/test_ki.py -v -s --durations=10 2>&1 | tee ki.log
       - name: Failure details
         if: failure()
-        run: tools/ci_tail.sh ki.log 120
+        run: |
+          grep -E "PASSED|FAILED|ERROR|SKIPPED|passed|failed|matches|music:|noise:|→|groups:" ki.log > ki_summary.log || true
+          tools/ci_tail.sh ki_summary.log 60
+          tools/ci_tail.sh ki.log 60
       - name: AI environment and models (save, also after failures)
         if: always()
         uses: actions/cache/save@v4
