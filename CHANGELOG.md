@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.0.5 – 2026-10-22
 - Title library: 12 styles for title and end credits (band, clean, card, light card, glass, lines, frame, lower
   third, highlighter, glow, outline, cinema), any installed font, accent colour, position bottom/centre. The step
   “Cut settings” shows a gallery rendered on a frame of your own film; live preview, Kdenlive project and renders
