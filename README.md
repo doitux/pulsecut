@@ -100,7 +100,7 @@ and you assign them yourself.
 
 | Problem | Solution |
 |---|---|
-| Window stays black or flickers (graphics driver) | `PULSECUT_SOFTWARE_GL=1 ./Pulsecut-*.AppImage` |
+| Window stays white or black (graphics driver) | Pulsecut notices this and restarts itself without Vulkan, then without GPU acceleration, and remembers the setting. To choose by hand: `PULSECUT_GRAFIK=opengl` or `PULSECUT_GRAFIK=software` (back to normal: `PULSECUT_GRAFIK=gpu`) |
 | Prefer your normal web browser | `./Pulsecut-*.AppImage --browser` |
 | AppImage does not start (“FUSE”) | `./Pulsecut-*.AppImage --appimage-extract-and-run` |
 | Open a project directly | `./Pulsecut-*.AppImage /path/to/Project_Pulsecut` |

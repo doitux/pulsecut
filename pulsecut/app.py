@@ -12,6 +12,33 @@ from .i18n import L as _t
 from .util import resource
 
 
+GRAFIK_STUFEN = ("gpu", "opengl", "software")   # Reihenfolge der Ausweichstufen bei weißem Fenster
+
+
+def _settings():
+    from .util import CONFIG_HOME, read_json
+    return read_json(CONFIG_HOME / "einstellungen.json", {}) or {}
+
+
+def _save_setting(key, value):
+    from .util import CONFIG_HOME, atomic_write_json
+    CONFIG_HOME.mkdir(parents=True, exist_ok=True)
+    d = _settings()
+    d[key] = value
+    atomic_write_json(CONFIG_HOME / "einstellungen.json", d)
+
+
+def grafik_stufe():
+    """gpu = normal; opengl = Qt/Chromium ohne Vulkan; software = ohne Grafikbeschleunigung."""
+    if os.environ.get("PULSECUT_SOFTWARE_GL"):
+        return "software"
+    forced = os.environ.get("PULSECUT_GRAFIK")
+    if forced in GRAFIK_STUFEN:
+        return forced
+    s = _settings().get("grafik")
+    return s if s in GRAFIK_STUFEN else "gpu"
+
+
 def _qt_env():
     # Chromium-Sandbox scheitert in AppImages/als root an Benutzer-Namensräumen – die Seite ist rein lokal
     if getattr(sys, "frozen", False) or os.geteuid() == 0 or os.environ.get("APPIMAGE"):
@@ -20,9 +47,29 @@ def _qt_env():
     for f in ("--autoplay-policy=no-user-gesture-required", "--enable-features=OverlayScrollbar"):
         if f.split("=")[0] not in flags:
             flags += " " + f
-    if os.environ.get("PULSECUT_SOFTWARE_GL"):
-        flags += " --disable-gpu"
+    stufe = grafik_stufe()
+    if stufe in ("opengl", "software"):
+        # Vulkan meiden: auf manchen Intel-Grafiken (z. B. Haswell) bleibt das Fenster sonst weiß
+        os.environ.setdefault("QSG_RHI_BACKEND", "opengl")
+        flags += " --disable-features=Vulkan,DefaultANGLEVulkan,VulkanFromANGLE --disable-vulkan-surface"
+    if stufe == "software":
+        flags += " --disable-gpu --disable-gpu-compositing"
     os.environ["QTWEBENGINE_CHROMIUM_FLAGS"] = flags.strip()
+    print(f"Grafik: {stufe}", flush=True)
+
+
+def _neustart_mit(stufe):
+    """Pulsecut mit der nächsten Grafik-Stufe neu starten (dieselben Argumente, derselbe Prozess)."""
+    _save_setting("grafik", stufe)
+    print(f"Fenster bleibt leer – starte neu mit Grafik-Stufe „{stufe}“", flush=True)
+    for k in ("QTWEBENGINE_CHROMIUM_FLAGS", "QSG_RHI_BACKEND"):
+        os.environ.pop(k, None)
+    os.environ["PULSECUT_GRAFIK"] = stufe
+    sys.stdout.flush()
+    if getattr(sys, "frozen", False):
+        os.environ["PYINSTALLER_RESET_ENVIRONMENT"] = "1"   # als neuer Programmstart behandeln
+        os.execv(sys.executable, [sys.executable] + sys.argv[1:])
+    os.execv(sys.executable, [sys.executable, "-m", "pulsecut"] + sys.argv[1:])
 
 
 def run_qt(url, state):
@@ -104,6 +151,36 @@ def run_qt(url, state):
     channel.registerObject("bridge", bridge)
     page.setWebChannel(channel)
     state.bridge = True
+    def pruefen(ok):
+        """Wird die Seite angezeigt? Die Kopfzeile ist dunkel – bleibt sie weiß (Grafiktreiber), nächste Stufe."""
+        if not ok or os.environ.get("PULSECUT_SCREENSHOT"):
+            return
+        from PySide6.QtCore import QTimer
+
+        def check():
+            img = view.grab().toImage()
+            w = min(img.width(), 600)
+            if w < 50 or img.height() < 40:
+                return
+            dark = total = 0
+            for x in range(10, w, 7):
+                for y in (8, 20, 32):
+                    c = img.pixelColor(x, y)
+                    total += 1
+                    dark += (c.red() + c.green() + c.blue()) < 240
+            stufe = grafik_stufe()
+            if os.environ.get("PULSECUT_TEST_LEER") == stufe:   # Test der Ausweichstufen
+                dark = 0
+            print(f"Fensterprüfung: {dark}/{total} dunkle Punkte in der Kopfzeile", flush=True)
+            if dark < total * 0.3:
+                nxt = GRAFIK_STUFEN.index(stufe) + 1
+                if nxt < len(GRAFIK_STUFEN):
+                    _neustart_mit(GRAFIK_STUFEN[nxt])
+                else:
+                    print("Fenster bleibt leer – bitte mit --browser starten", flush=True)
+        QTimer.singleShot(2500, check)
+
+    page.loadFinished.connect(pruefen)
     view.setUrl(QUrl(url))
     win.setCentralWidget(view)
     win.show()

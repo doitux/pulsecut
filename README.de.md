@@ -78,7 +78,7 @@ Szenen an den größten Zeitlücken auf deine Stichworte verteilt, und du korrig
 
 | Problem | Lösung |
 |---|---|
-| Programmfenster bleibt schwarz oder flackert (Grafiktreiber) | `PULSECUT_SOFTWARE_GL=1 ./Pulsecut-*.AppImage` |
+| Programmfenster bleibt weiß oder schwarz (Grafiktreiber) | Pulsecut merkt das, startet von selbst neu ohne Vulkan, notfalls ohne Grafikbeschleunigung, und merkt sich die Einstellung. Von Hand: `PULSECUT_GRAFIK=opengl` oder `PULSECUT_GRAFIK=software` (zurück: `PULSECUT_GRAFIK=gpu`) |
 | Lieber im normalen Browser arbeiten | `./Pulsecut-*.AppImage --browser` |
 | AppImage startet nicht („FUSE“) | `./Pulsecut-*.AppImage --appimage-extract-and-run` |
 | Projekt direkt öffnen | `./Pulsecut-*.AppImage /pfad/zum/Projekt_Pulsecut` |
