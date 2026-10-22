@@ -1,0 +1,57 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build, test and publish the AppImage
+    runs-on: ubuntu-latest
+    container: ubuntu:22.04
+    timeout-minutes: 60
+    steps:
+      - name: git for checkout
+        run: apt-get update && apt-get install -y --no-install-recommends git ca-certificates
+      - uses: actions/checkout@v4
+      - name: Version matches tag
+        run: |
+          V=$(sed -n 's/^VERSION = "\(.*\)"/\1/p' pulsecut/__init__.py)
+          test "v$V" = "${GITHUB_REF_NAME}" || { echo "Tag ${GITHUB_REF_NAME} does not match VERSION $V"; exit 1; }
+      - name: Build
+        run: packaging/ci_build.sh
+      - name: Smoke test
+        env:
+          SMOKE_SCREENSHOT: dist/window.png
+        run: xvfb-run -a -s "-screen 0 1600x1000x24" python3 tests/smoke_appimage.py dist/Pulsecut-*-x86_64.AppImage --gui
+      - name: Release notes
+        run: |
+          V="${GITHUB_REF_NAME#v}"
+          {
+            echo "## Pulsecut $V"
+            echo
+            echo "Linux x86-64 AppImage (glibc 2.35+: Ubuntu/Kubuntu 22.04 and newer, Debian 12+, Fedora 36+)."
+            echo
+            echo '```bash'
+            echo 'sudo apt install ffmpeg melt'
+            echo "chmod +x Pulsecut-$V-x86_64.AppImage && ./Pulsecut-$V-x86_64.AppImage"
+            echo '```'
+            echo
+            echo "**SHA-256**"
+            echo
+            echo '```'
+            cat dist/SHA256SUMS
+            echo '```'
+            echo
+            echo "Deutsch: AppImage herunterladen, ausführbar machen, starten. Anleitung: [README.de.md](https://github.com/${GITHUB_REPOSITORY}/blob/${GITHUB_REF_NAME}/README.de.md)"
+          } > dist/NOTES.md
+      - uses: softprops/action-gh-release@v2
+        with:
+          name: Pulsecut ${{ github.ref_name }}
+          body_path: dist/NOTES.md
+          files: |
+            dist/Pulsecut-*-x86_64.AppImage
+            dist/SHA256SUMS

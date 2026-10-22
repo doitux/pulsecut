@@ -1,0 +1,52 @@
+name: AI integration
+
+# Sets up the real AI environment (PyTorch CPU, sentence-transformers, transformers, faster-whisper via uv) and runs
+# image/text/sound/speech recognition with the actual models. Manual, weekly, and when the AI code changes.
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 3 * * 1"
+  push:
+    branches: [main]
+    paths:
+      - pulsecut/ki.py
+      - pulsecut/ki_worker.py
+      - pulsecut/erkennung.py
+      - tests/test_ki.py
+      - .github/workflows/ki.yml
+
+jobs:
+  ki:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    env:
+      PULSECUT_KI_TEST: "1"
+      PULSECUT_TEST_REAL_HOME: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: System packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ffmpeg espeak-ng fonts-dejavu-core
+      - name: Python packages
+        run: pip install numpy pytest uv
+      - name: AI environment and models (cached)
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.local/share/pulsecut/ki-umgebung
+            ~/.cache/huggingface
+          key: ki-${{ runner.os }}-${{ hashFiles('pulsecut/ki.py') }}
+      - name: Synthetic test media (cached)
+        uses: actions/cache@v4
+        with:
+          path: tests/.data
+          key: testdata-ki-${{ hashFiles('tests/gen_clips.py', 'tests/gen_music.py') }}-${{ hashFiles('pulsecut/video.py', 'pulsecut/musik.py') }}
+      - name: AI tests
+        run: python -m pytest -m ki tests/test_ki.py -v -s --durations=10
+      - name: Setup log
+        if: failure()
+        run: ls -la ~/.local/share/pulsecut || true

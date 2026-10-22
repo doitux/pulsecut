@@ -1,0 +1,14 @@
+[Desktop Entry]
+Type=Application
+Name=Pulsecut
+GenericName=Cut videos to the beat
+GenericName[de]=Videos auf den Takt schneiden
+Comment=Automatically cut recap videos to the beat of the music – with Kdenlive export
+Comment[de]=Rückblick-Videos automatisch im Takt der Musik schneiden – mit Kdenlive-Export
+Exec=pulsecut %F
+Icon=pulsecut
+Terminal=false
+Categories=AudioVideo;Video;AudioVideoEditing;
+Keywords=Video;Editing;Music;Beat;Kdenlive;Recap;
+Keywords[de]=Video;Schnitt;Musik;Beat;Takt;Kdenlive;Rückblick;
+StartupWMClass=pulsecut

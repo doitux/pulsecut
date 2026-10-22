@@ -1,0 +1,6 @@
+# Build environment of the AppImage (Python 3.10 on Ubuntu 22.04)
+PySide6==6.9.2
+numpy>=1.26,<2.3
+pyinstaller>=6.10,<7
+pyinstaller-hooks-contrib
+uv==0.13.5
