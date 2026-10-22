@@ -23,7 +23,7 @@ sind.
 | 1 Projekt | Video- und Musikordner wählen. Musik und Videos werden im Hintergrund analysiert. |
 | 2 Musik & Takt | Jedes Stück mit **Klick-Spur** anhören: hoher Klick = „1“, die Kästchen zählen mit. Korrekturen: Taktanfang ±1 Schlag, Tempo halb/doppelt oder BPM vorgeben, 3/4 oder 4/4, Feinversatz. Reihenfolge der Stücke, Stücke ab- und anwählen, **direkt nacheinander oder mit Überblendung**. |
 | 3 Länge | Ganze Musik oder bestimmte Länge. Ist die Musik zu lang: je Stück *nicht / vorne / hinten kürzen*. Gekürzt wird immer an einem Taktanfang. |
-| 4 Videos | Reihenfolge nach Aufnahmezeit (Handy-Metadaten) oder Dateiname. Clips auf *Raus* oder *Wichtig* setzen. |
+| 4 Videos | Reihenfolge nach Aufnahmezeit (Handy-Metadaten) oder Dateiname. Clips auf *Raus* oder *Wichtig* setzen. Die Analyse läuft leise im Hintergrund, der Schalter *⚡ Volle Leistung* nimmt alle Prozessorkerne. |
 | 5 Ablauf | Per **Mikrofon** oder Tastatur beschreiben, was in welcher Reihenfolge passiert ist. Daraus werden Stichworte. „jeden Tag“ oder „zwischendurch“ heißt: kommt mehrmals vor. Deutsch und Englisch werden erkannt. |
 | 6 Szenen erkennen | Die KI ordnet die Videos den Stichworten zu und berücksichtigt dabei die beschriebene Reihenfolge. Unsichere Szenen sind markiert. Bei vermutlich vergessenen Programmpunkten fragt sie nach: „Ist da nicht noch *Party / Disco* dabei gewesen?“ |
 | 7 Gewichtung & Reihenfolge | Anteil je Stichwort, je Szene *Raus … Viel mehr*, ganze Blöcke verschieben (z. B. *Gruppenfoto hinter Abschlusskonzert*), einzelne Clips oder Schnitte abwählen. |

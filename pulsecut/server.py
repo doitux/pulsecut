@@ -106,6 +106,7 @@ def zustand():
                           "clips": len(pr.clips), "stuecke": len(pr.tracks),
                           "stichworte": len(pr.d["stichworte"]), "erkennung": pr.erk is not None,
                           "timeline": bool(pr.d.get("timeline")), "exporte": pr.d.get("exporte", []),
+                          "boost": pr.boost,
                           "sprache_text": STATE.sprache_text}
     return out
 
@@ -247,6 +248,9 @@ def api_post(path, b, raw=None, ctype=""):
             pr.update_layout()
         pr.save()
         return musik_info(pr)
+    if path == "/api/videos/boost":
+        pr.boost = bool(b.get("an"))
+        return {"boost": pr.boost}
     if path == "/api/videos/sortierung":
         pr.d["sortierung"] = "name" if b.get("art") == "name" else "zeit"
         pr.sort_clips()

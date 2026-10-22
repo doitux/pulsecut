@@ -194,7 +194,7 @@ R.musik = {
   onPoll() {
     const mj = $("#mjob"); if (!mj) return;
     const a = Z.projekt.jobs.analyse;
-    mj.innerHTML = jobBox("musik", T("Musik wird analysiert")) + (a && a.laeuft && !Z.projekt.jobs.musik.laeuft ? `<div class="hinweis">${T("Im Hintergrund werden jetzt die Videos analysiert (Vorschaubilder, Perspektiven, Kamerabewegung). Das dauert je nach Menge eine Weile, der Lüfter darf dabei laut werden – du kannst hier trotzdem weiterarbeiten.")}</div>` : "");
+    mj.innerHTML = jobBox("musik", T("Musik wird analysiert")) + (a && a.laeuft && !Z.projekt.jobs.musik.laeuft ? `<div class="hinweis">${T("Im Hintergrund werden jetzt leise die Videos analysiert (Vorschaubilder, Perspektiven, Kamerabewegung). Unter „Videos“ kannst du auf volle Leistung schalten.")}</div>` : "");
   },
   draw() {
     const box = $("#mliste"); if (!box) return;
@@ -307,12 +307,26 @@ let VI = null, viFilter = "alle";
 R.videos = {
   async render(m) {
     m.innerHTML = `<h1>${T("Videos & Reihenfolge")}</h1><p class="lead">${T("Die Videos werden nach Aufnahmezeit (aus den Handy-Metadaten) sortiert – oder nach Dateiname, wenn du sie selbst durchnummeriert hast. Unbrauchbares kannst du hier schon auf „Raus“ setzen, besonders Wichtiges auf „Wichtig“.")}</p>
-      <div id="vjob"></div><div class="box row" id="vkopf"></div><div id="vgrid" class="grid"></div>${weiter("ablauf")}`;
+      <div id="vjob"></div><div id="vboost"></div><div class="box row" id="vkopf"></div><div id="vgrid" class="grid"></div>${weiter("ablauf")}`;
     bindWeiter(m); await this.load();
   },
-  async load() { const vj = $("#vjob"); if (vj) vj.innerHTML = jobBox("analyse", T("Videos werden analysiert")); try { VI = await api("/api/videos"); } catch (e) { return; } this.draw(); },
+  async load() { const vj = $("#vjob"); if (vj) vj.innerHTML = jobBox("analyse", T("Videos werden analysiert")); this.boost(); try { VI = await api("/api/videos"); } catch (e) { return; } this.draw(); },
   onJob(n) { if (n === "analyse") this.load(); },
-  onPoll() { const vj = $("#vjob"); if (vj) vj.innerHTML = jobBox("analyse", T("Videos werden analysiert")); },
+  onPoll() { const vj = $("#vjob"); if (vj) vj.innerHTML = jobBox("analyse", T("Videos werden analysiert")); this.boost(); },
+  boost() {
+    const el = $("#vboost"); if (!el || !Z || !Z.projekt) return;
+    const p = Z.projekt, a = p.jobs.analyse;
+    let h = "";
+    if (a && a.laeuft) {
+      h = p.jobs.musik.laeuft ? `<div class="hinweis">${T("Die Videoanalyse beginnt, sobald die Musik fertig ist.")}</div>`
+        : `<div class="box row"><b>${T("Videoanalyse")}</b>${seg("boost", [["0", T("Leise im Hintergrund")], ["1", T("⚡ Volle Leistung")]], p.boost ? "1" : "0")}
+           <span class="meta">${p.boost ? T("Alle Prozessorkerne arbeiten – schneller fertig, der Lüfter wird laut.") : T("Ein Kern, niedrigste Priorität – Abspielen und Bedienen bleiben flüssig, dauert aber länger.")}</span></div>`;
+    }
+    if (el._h === h) return;
+    el._h = h; el.innerHTML = h;
+    const s = $('[data-f="boost"]', el);
+    if (s) onSeg(s, async v => { await api("/api/videos/boost", {an: v === "1"}); Z.projekt.boost = v === "1"; this.boost(); });
+  },
   draw() {
     const k = $("#vkopf"); if (!k) return;
     const n = VI.clips.length, dur = VI.clips.reduce((a, c) => a + c.dauer, 0);

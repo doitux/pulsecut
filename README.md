@@ -22,7 +22,8 @@ footage shows children.
    fine offset. Tracks can follow each other directly or with a subtle crossfade.
 2. **Length.** Use all of the music or a target length. You choose which track is shortened at the start or at the
    end; cuts always happen at the start of a bar.
-3. **Videos** are sorted by recording time from the phone metadata, or by file name. Image quality, changes of view
+3. **Videos** are sorted by recording time from the phone metadata, or by file name. The analysis runs quietly in
+   the background; a *⚡ Full power* switch uses all processor cores. Image quality, changes of view
    and camera motion (pans, tilts, zooms) are analysed.
 4. **Describe the events**, typed or spoken: *“First everyone arrives by bus, then registration. Every day
    rehearsals, in between free time with football. On the last day the final concert, after that the group

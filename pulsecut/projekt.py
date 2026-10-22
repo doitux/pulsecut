@@ -5,7 +5,6 @@ import shutil
 import threading
 import time
 import traceback
-from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from pathlib import Path
 
@@ -95,6 +94,7 @@ class Projekt:
         self.lock = threading.RLock()
         self.save_lock = threading.Lock()
         self.media_lock = threading.Lock()   # Klick-Spuren und Vorschau-Mix nicht doppelt erzeugen
+        self.boost = False                    # Videoanalyse mit voller Rechenleistung
         self.jobs = {n: Job(n) for n in ("analyse", "musik", "ki", "erkennung", "sprache", "export", "plan")}
         self.clips = []
         self.tracks = []
@@ -253,11 +253,38 @@ class Projekt:
 
         job.text = _t("Analysiere {n} Videos ({m} aus dem Zwischenspeicher) …", n=len(todo), m=len(clips) - len(todo))
         work_items = list(dict.fromkeys(todo + need_proxy))
-        workers = max(1, min(4, (os.cpu_count() or 2) // 2))
-        with ThreadPoolExecutor(workers) as ex:
-            for i, _ in enumerate(ex.map(work, work_items)):
-                if i % 8 == 7:
-                    self.save_cache()
+        # Leise: ein Arbeiter im Hintergrund. Volle Leistung (Schalter „Boost“): alle Kerne bis auf einen.
+        # Die Zahl der gleichzeitig arbeitenden Threads richtet sich laufend nach dem Schalter.
+        cond = threading.Condition()
+        state = {"aktiv": 0, "fertig": 0}
+
+        def limit():
+            return max(2, (os.cpu_count() or 2) - 1) if self.boost else 1
+
+        def loop():
+            while True:
+                with cond:
+                    while state["aktiv"] >= limit() and work_items:
+                        cond.wait(0.5)
+                    if not work_items:
+                        return
+                    c = work_items.pop(0)
+                    state["aktiv"] += 1
+                try:
+                    work(c)
+                finally:
+                    with cond:
+                        state["aktiv"] -= 1
+                        state["fertig"] += 1
+                        if state["fertig"] % 8 == 0:
+                            self.save_cache()
+                        cond.notify_all()
+        threads = [threading.Thread(target=loop, daemon=True, name=f"analyse-{i}")
+                   for i in range(max(2, (os.cpu_count() or 2) - 1))]
+        for th in threads:
+            th.start()
+        for th in threads:
+            th.join()
         self.save_cache()
         clips = [c for c in clips if c.ana]
         for c in clips:

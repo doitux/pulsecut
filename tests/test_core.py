@@ -103,3 +103,23 @@ def test_scene_weighting_and_order(projekt):
     projekt.plan(keep_locked=False)
     assert all(s["szene"] != z["id"] for s in projekt.d["timeline"])
     assert problems(projekt) == ([], 0)
+
+
+def test_analysis_quiet_and_boost(media, tmp_path):
+    """Fresh analysis with one quiet worker, switched to full power while it runs."""
+    import shutil
+    import threading
+    from pulsecut.projekt import Job, Projekt
+    vid, mus = tmp_path / "v", tmp_path / "m"
+    vid.mkdir()
+    mus.mkdir()
+    for name in sorted(p.name for p in media.RAW.glob("VID_2026071*_1*.mp4"))[:4]:
+        shutil.copy2(media.RAW / name, vid / name)
+    shutil.copy2(media.MUSIK / "01 Morning Groove.mp3", mus)
+    pr = Projekt.erstellen("Boost", vid, mus, tmp_path / "p")
+    assert pr.boost is False
+    threading.Timer(1.0, lambda: setattr(pr, "boost", True)).start()
+    job = Job("analyse")
+    pr.analyse_job(job)
+    assert len(pr.clips) == 4 and all(c.ana for c in pr.clips)
+    assert all((pr.dirs["proxy"] / f"{c.hash}.webm").exists() for c in pr.clips)

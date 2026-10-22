@@ -40,6 +40,7 @@ def media():
 def projekt(media):
     from pulsecut.projekt import Job, Projekt
     pr = Projekt.erstellen("Camp 2026", fake.RAW, fake.MUSIK, fake.PROJ)
+    pr.boost = True   # analyse with all cores
     a, m = Job("analyse"), Job("musik")
     pr.analyse_job(a)
     pr.musik_job(m)

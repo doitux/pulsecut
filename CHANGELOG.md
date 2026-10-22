@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.0.3 – 2026-10-22
+- Video analysis runs quietly by default (one worker, lowest priority for the analysis threads and the ffmpeg
+  processes) so music check and playback stay smooth. In the video step a switch “⚡ Full power” uses all cores
+  (except one) – it takes effect immediately, also during a running analysis.
+
 ## 1.0.2 – 2026-10-22
 - Click tracks and the music preview are prepared right after the music analysis, so “play” starts at once
   (before, they were made on the first click – slow while the videos were analysed).
