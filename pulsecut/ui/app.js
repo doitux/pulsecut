@@ -732,7 +732,9 @@ R.timeline = {
   leave() { if (PLY) PLY.destroy(); PLY = null; document.removeEventListener("keydown", this.key); },
   btn() { const b = $("#pplay"); if (b) b.textContent = PLY.playing ? T("⏸ Pause") : T("▶ Abspielen"); },
   async load(keepSel = true) {
-    TL = await api("/api/timeline");
+    const tl = await api("/api/timeline");
+    if (step !== "timeline" || !PLY || !$("#tlinfo")) return;   // inzwischen woanders hin gewechselt
+    TL = tl;
     if (!TL.shots.length) { $("#tlinfo").innerHTML = `<div class="hinweis">${T("Noch kein Schnitt – bitte in „Schnitt einstellen“ auf „Schnitt erstellen“ klicken.")}</div>`; return; }
     PLY.load(TL);
     if (!pps) { const w = ($("#tls").clientWidth || 900) - 20; pps = Math.max(4, Math.min(80, Math.round(w / TL.dauer * 2.2))); }
@@ -808,7 +810,8 @@ R.timeline = {
   async inspect(id) {
     const s = TL.shots.find(x => x.id === id); if (!s) return;
     const [cb, br] = await Promise.all([api("/api/clipbilder/" + encodeURIComponent(s.clip)), api("/api/bereich?id=" + id)]);
-    const box = $("#insp"); const k0 = TL.k, ul = TL.musik ? TL.musik.einheit : 2;
+    const box = $("#insp"); if (!box || !PLY || step !== "timeline") return;
+    const k0 = TL.k, ul = TL.musik ? TL.musik.einheit : 2;
     box.innerHTML = `<div class="inspector"><div class="row"><span class="dot" style="background:${s.farbe}"></span><b>${esc(s.name)}</b><span class="meta">${esc(s.clip)} · ${T`Film ${fmt1(s.tl0)}–${fmt1(s.tl1)} · Ausschnitt ab ${komma(s.src.toFixed(2))} s`} · ${komma(s.dur.toFixed(2))} s (${s.k} ${TL.musik && TL.musik.raster === "halbtakt" ? T("Halbtakte") : T("Takte")}) · ${T("Kamera:")} ${esc(s.bewegung_text)}</span>${s.lock ? `<span class="pill">${T("🔒 gesperrt")}</span>` : ""}</div>
       <div class="meta" style="margin:8px 0 4px">${T("Ausschnitt im Clip verschieben: gelben Rahmen ziehen oder mit dem Mausrad/Touchpad wischen. Rot schraffiert = schon an anderer Stelle im Film verwendet (dort stößt du an).")}</div>
       <div class="filmstrip" id="fs"><div class="bilder"></div></div>
