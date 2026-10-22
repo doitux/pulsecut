@@ -152,7 +152,7 @@ or `_t("…")` (Python) and add the English version to `pulsecut/ui/i18n.js` or 
 
 **Continuous integration:** every push runs the test suite (including browser tests in both languages and real
 rendering). A separate workflow sets up the real AI environment and runs the recognition with the actual models.
-Tags `v*` build the AppImage, smoke-test it and attach it with a SHA-256 checksum to a GitHub release.
+The Release workflow (started by hand with a tag like `v1.0.0`, or by pushing such a tag) builds the AppImage on Ubuntu 22.04, smoke-tests it including the Qt window and publishes it with a SHA-256 checksum as a GitHub release.
 
 ## License
 
