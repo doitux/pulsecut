@@ -171,7 +171,8 @@ R.start = {render(m) {
   m.innerHTML = `<h1>${T("Neues Projekt")}</h1><p class="lead">${T("Wähle den Ordner mit deinen Videos und einen Ordner mit der Musik. Pulsecut analysiert zuerst die Musik (Takt und Beats) und dann alle Videos – das läuft im Hintergrund, du kannst währenddessen weitermachen.")}</p>
    ${fehlt.length ? `<div class="fehler"><b>${T`${fehlt.join(T(" und "))} fehlt.`}</b> ${T("Bitte im Terminal installieren: <code>sudo apt install ffmpeg</code> und Pulsecut neu starten.")}</div>` : ""}
    ${t && !t.melt ? `<div class="hinweis">${T("<b>melt</b> wurde nicht gefunden (kommt normalerweise mit Kdenlive). Ohne melt wird beim Rendern ohne Überblendungen gearbeitet: <code>sudo apt install melt</code>")}</div>` : ""}
-   ${t && t.ffmpeg && !t.vpx ? `<div class="hinweis">${T("Dein ffmpeg kann kein VP8 (libvpx) – die Live-Vorschau im Programm funktioniert dann nicht.")}</div>` : ""}
+   ${t && t.ffmpeg && t.ffmpeg_ok === false ? `<div class="fehler">${T("ffmpeg ist installiert, startet aus Pulsecut heraus aber nicht:")} <code>${esc((t.ffmpeg_fehler || []).join(" "))}</code> ${T("Bitte Pulsecut einmal schließen und neu starten.")}</div>`
+     : (t && t.ffmpeg && !t.vpx ? `<div class="hinweis">${T("Dein ffmpeg kann kein VP8 (libvpx) – die Live-Vorschau im Programm funktioniert dann nicht.")}</div>` : "")}
    ${Z && Z.appimage && !Z.desktop ? `<div class="hinweis row"><span style="flex:1">${T("Pulsecut läuft als AppImage. Soll es ins Startmenü eingetragen werden?")}</span><button id="bdesk">${T("Ins Startmenü eintragen")}</button></div>` : ""}
    <div class="box col">
      <label class="lab">${T("Name des Projekts")}</label><input type="text" id="pname" placeholder="${T("z. B. Sommerfreizeit 2026")}" value="${esc(p ? p.name : "")}">

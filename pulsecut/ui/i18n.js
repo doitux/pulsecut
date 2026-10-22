@@ -42,6 +42,8 @@ const EN = {
  " und ": " and ",
  "Bitte im Terminal installieren: <code>sudo apt install ffmpeg</code> und Pulsecut neu starten.": "Please install it in a terminal: <code>sudo apt install ffmpeg</code> and restart Pulsecut.",
  "<b>melt</b> wurde nicht gefunden (kommt normalerweise mit Kdenlive). Ohne melt wird beim Rendern ohne Überblendungen gearbeitet: <code>sudo apt install melt</code>": "<b>melt</b> was not found (it usually comes with Kdenlive). Without melt, rendering works without crossfades: <code>sudo apt install melt</code>",
+ "ffmpeg ist installiert, startet aus Pulsecut heraus aber nicht:": "ffmpeg is installed but does not start from within Pulsecut:",
+ "Bitte Pulsecut einmal schließen und neu starten.": "Please close Pulsecut and start it again.",
  "Dein ffmpeg kann kein VP8 (libvpx) – die Live-Vorschau im Programm funktioniert dann nicht.": "Your ffmpeg has no VP8 (libvpx) – the live preview will not work.",
  "Pulsecut läuft als AppImage. Soll es ins Startmenü eingetragen werden?": "Pulsecut is running as an AppImage. Add it to the application menu?",
  "Ins Startmenü eintragen": "Add to application menu",

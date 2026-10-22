@@ -60,16 +60,18 @@ def _qt_env():
 
 def _neustart_mit(stufe):
     """Pulsecut mit der nächsten Grafik-Stufe neu starten (dieselben Argumente, derselbe Prozess)."""
+    from .util import clean_env
     _save_setting("grafik", stufe)
     print(f"Fenster bleibt leer – starte neu mit Grafik-Stufe „{stufe}“", flush=True)
-    for k in ("QTWEBENGINE_CHROMIUM_FLAGS", "QSG_RHI_BACKEND"):
-        os.environ.pop(k, None)
-    os.environ["PULSECUT_GRAFIK"] = stufe
+    # mit der ursprünglichen Umgebung neu starten (ohne die Bibliothekspfade dieses Programmlaufs)
+    env = clean_env({"PULSECUT_GRAFIK": stufe})
+    for k in ("QTWEBENGINE_CHROMIUM_FLAGS", "QSG_RHI_BACKEND", "QTWEBENGINE_DISABLE_SANDBOX"):
+        env.pop(k, None)
     sys.stdout.flush()
     if getattr(sys, "frozen", False):
-        os.environ["PYINSTALLER_RESET_ENVIRONMENT"] = "1"   # als neuer Programmstart behandeln
-        os.execv(sys.executable, [sys.executable] + sys.argv[1:])
-    os.execv(sys.executable, [sys.executable, "-m", "pulsecut"] + sys.argv[1:])
+        env["PYINSTALLER_RESET_ENVIRONMENT"] = "1"   # als neuer Programmstart behandeln
+        os.execve(sys.executable, [sys.executable] + sys.argv[1:], env)
+    os.execve(sys.executable, [sys.executable, "-m", "pulsecut"] + sys.argv[1:], env)
 
 
 def run_qt(url, state):

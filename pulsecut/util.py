@@ -74,6 +74,17 @@ def clean_env(extra=None):
             env.pop(k, None)
             if orig:
                 env[k] = orig
+        # Bibliothekspfade aus dem Programmpaket nie an fremde Programme weitergeben (auch nicht, wenn sie über
+        # einen Neustart in *_ORIG gelandet sind) – sonst lädt z. B. ffmpeg die falschen Bibliotheken
+        inside = [p for p in (getattr(sys, "_MEIPASS", None), os.environ.get("APPDIR"),
+                              str(Path(sys.executable).resolve().parent)) if p]
+        for k in ("LD_LIBRARY_PATH", "QT_PLUGIN_PATH", "PYTHONPATH"):
+            if k in env:
+                keep = [p for p in env[k].split(":") if p and not any(p.startswith(i) for i in inside)]
+                if keep:
+                    env[k] = ":".join(keep)
+                else:
+                    env.pop(k)
     if extra:
         env.update(extra)
     return env
@@ -114,7 +125,12 @@ def tools_status():
     st = {t: bool(shutil.which(t)) for t in ("ffmpeg", "ffprobe", "melt")}
     st["vpx"] = False
     if st["ffmpeg"]:
-        enc = run(["ffmpeg", "-hide_banner", "-encoders"], check=False)
+        p = subprocess.run(["ffmpeg", "-hide_banner", "-encoders"], capture_output=True, text=True, env=clean_env(),
+                           stdin=subprocess.DEVNULL)
+        enc = p.stdout or ""
+        st["ffmpeg_ok"] = p.returncode == 0 and "Encoders" in enc
+        if not st["ffmpeg_ok"]:
+            st["ffmpeg_fehler"] = (p.stderr or "").strip().splitlines()[-1:] or [f"exit {p.returncode}"]
         st["vpx"] = "libvpx" in enc
         st["opus"] = "libopus" in enc
         st["x264"] = "libx264" in enc
