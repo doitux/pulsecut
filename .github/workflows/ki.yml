@@ -33,13 +33,14 @@ jobs:
           sudo apt-get install -y --no-install-recommends ffmpeg espeak-ng fonts-dejavu-core
       - name: Python packages
         run: pip install numpy pytest uv
-      - name: AI environment and models (cached)
-        uses: actions/cache@v4
+      - name: AI environment and models (restore)
+        uses: actions/cache/restore@v4
         with:
           path: |
             ~/.local/share/pulsecut/ki-umgebung
             ~/.cache/huggingface
           key: ki-${{ runner.os }}-${{ hashFiles('pulsecut/ki.py') }}
+          restore-keys: ki-${{ runner.os }}-${{ hashFiles('pulsecut/ki.py') }}-
       - name: Synthetic test media (cached)
         uses: actions/cache@v4
         with:
@@ -47,6 +48,14 @@ jobs:
           key: testdata-ki-${{ hashFiles('tests/gen_clips.py', 'tests/gen_music.py') }}-${{ hashFiles('pulsecut/video.py', 'pulsecut/musik.py') }}
       - name: AI tests
         run: python -m pytest -m ki tests/test_ki.py -v -s --durations=10
+      - name: AI environment and models (save, also after failures)
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            ~/.local/share/pulsecut/ki-umgebung
+            ~/.cache/huggingface
+          key: ki-${{ runner.os }}-${{ hashFiles('pulsecut/ki.py') }}-${{ github.run_id }}
       - name: Setup log
         if: failure()
         run: ls -la ~/.local/share/pulsecut || true

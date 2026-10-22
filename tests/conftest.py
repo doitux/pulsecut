@@ -77,5 +77,8 @@ def pytest_runtest_logreport(report):
     msg = "\n".join(lines)[-3500:]
     for a, b in (("%", "%25"), ("\r", "%0D"), ("\n", "%0A")):
         msg = msg.replace(a, b)
-    sys.__stdout__.write(f"::error title={report.nodeid} ({report.when})::{msg}\n")
+    title = f"{report.nodeid} ({report.when})"
+    for a, b in (("%", "%25"), ("\r", "%0D"), ("\n", "%0A"), (":", "%3A"), (",", "%2C")):
+        title = title.replace(a, b)
+    sys.__stdout__.write(f"::error title={title}::{msg}\n")
     sys.__stdout__.flush()
