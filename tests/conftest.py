@@ -13,6 +13,9 @@ sys.path.insert(0, str(HERE.parent))
 # never touch the real ~/.config/pulsecut etc. of whoever runs the tests – except for the AI tests, which want to
 # reuse an installed AI environment and the downloaded models (PULSECUT_TEST_REAL_HOME=1)
 if not os.environ.get("PULSECUT_TEST_REAL_HOME"):
+    # Playwright finds its browsers via XDG_CACHE_HOME – keep pointing at the real one
+    os.environ.setdefault("PLAYWRIGHT_BROWSERS_PATH",
+                          str(Path(os.environ.get("XDG_CACHE_HOME") or Path.home() / ".cache") / "ms-playwright"))
     _home = Path(tempfile.mkdtemp(prefix="pulsecut-test-home-"))
     for k in ("XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_CACHE_HOME"):
         os.environ[k] = str(_home / k.lower())
