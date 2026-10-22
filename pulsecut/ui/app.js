@@ -191,7 +191,11 @@ R.musik = {
     this.draw();
   },
   onJob(n) { if (n === "musik") this.load(); },
-  onPoll() { const mj = $("#mjob"); if (mj) mj.innerHTML = jobBox("musik", T("Musik wird analysiert")); },
+  onPoll() {
+    const mj = $("#mjob"); if (!mj) return;
+    const a = Z.projekt.jobs.analyse;
+    mj.innerHTML = jobBox("musik", T("Musik wird analysiert")) + (a && a.laeuft && !Z.projekt.jobs.musik.laeuft ? `<div class="hinweis">${T("Im Hintergrund werden jetzt die Videos analysiert (Vorschaubilder, Perspektiven, Kamerabewegung). Das dauert je nach Menge eine Weile, der Lüfter darf dabei laut werden – du kannst hier trotzdem weiterarbeiten.")}</div>` : "");
+  },
   draw() {
     const box = $("#mliste"); if (!box) return;
     if (!MU.stuecke.length) { box.innerHTML = MU.laeuft ? T("Die Musik wird gerade analysiert …") : `<div class="fehler">${T("Im Musikordner wurde keine Musik gefunden.")}</div>`; return; }
@@ -203,14 +207,14 @@ R.musik = {
         <label><input type="checkbox" class="aktiv" ${t.aktiv ? "checked" : ""}> <b>${idx + 1}. ${esc(t.titel)}</b></label>
         <span class="meta">${esc(t.datei)} · ${fmt(t.dauer)} min · ${t.bpm} BPM · ${t.takt} · ${T`Takt ${komma(t.taktlaenge.toFixed(2))} s · ${t.takte} Takte`}${t.oktave_auto < 0 && !okt ? T(" · Tempo automatisch halbiert") : ""}</span>
         ${Object.keys(f).length ? `<span class="fixed">${T("von Hand korrigiert")}</span>` : ""}</div>
-        <div class="row" style="margin-top:6px"><audio controls preload="none" src="${t.klick}"></audio><div class="count">${Array.from({length: t.meter}, (_, k) => `<span class="${k ? "" : "eins"}">${k + 1}</span>`).join("")}</div></div>
+        <div class="row" style="margin-top:6px">${t.klick_bereit === false ? `<span class="meta">${T("Klick-Spur wird vorbereitet …")}</span>` : `<audio controls preload="auto" src="${t.klick}"></audio>`}<div class="count">${Array.from({length: t.meter}, (_, k) => `<span class="${k ? "" : "eins"}">${k + 1}</span>`).join("")}</div></div>
         <div class="row" style="margin-top:6px"><span class="lab">${T("Taktanfang")}</span><button data-a="frueher">${T("◀ 1 Schlag früher")}</button><button data-a="spaeter">${T("1 Schlag später ▶")}</button>
           <span class="lab" style="margin-left:10px">${T("Tempo")}</span>${seg("okt", [["-1", T("Halb")], ["0", T("Auto")], ["1", T("Doppelt")]], f.bpm ? "x" : okt)}
           <span class="meta">BPM</span><input type="number" min="40" max="240" step="0.1" placeholder="${T("auto")}" value="${f.bpm || ""}" style="width:76px"></div>
         <div class="row" style="margin-top:6px"><span class="lab">${T("Taktart")}</span>${seg("takt", [["0", T("Auto")], ["3", "3/4"], ["4", "4/4"]], f.takt || 0)}
           <span class="lab" style="margin-left:10px">${T("Feinversatz")}</span><button data-ms="-10">−10 ms</button><span class="meta">${(f.versatz_ms || 0) > 0 ? "+" : ""}${f.versatz_ms || 0} ms</span><button data-ms="10">+10 ms</button>
           <button data-a="zuruecksetzen" style="margin-left:10px">${T("Zurücksetzen")}</button></div>`;
-      const au = $("audio", el), cells = $$(".count span", el);
+      const au = $("audio", el) || document.createElement("audio"), cells = $$(".count span", el);
       const tick = () => {
         if (au.paused) return;
         const tt = au.currentTime; let lo = 0, hi = t.beats.length - 1, k = -1;

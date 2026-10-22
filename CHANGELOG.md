@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.0.2 – 2026-10-22
+- Click tracks and the music preview are prepared right after the music analysis, so “play” starts at once
+  (before, they were made on the first click – slow while the videos were analysed).
+- Video analysis starts after the music analysis and runs with low priority, so the interface and playback stay
+  smooth; the music step says when the videos are being analysed in the background.
+- Quieter terminal: aborted media connections are no longer reported; the system's xkbcommon is used.
+
 ## 1.0.1 – 2026-10-22
 - Window stayed white on some Intel graphics (e.g. Haswell, Vulkan in QtWebEngine): Pulsecut now checks after
   start whether the page is really shown and otherwise restarts itself without Vulkan, then without GPU

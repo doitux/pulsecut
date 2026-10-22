@@ -65,6 +65,8 @@ const EN = {
  "Lade …": "Loading …",
  "Übergang zwischen den Stücken": "Transition between tracks",
  "Musik wird analysiert": "Analysing music",
+ "Klick-Spur wird vorbereitet …": "Preparing click track …",
+ "Im Hintergrund werden jetzt die Videos analysiert (Vorschaubilder, Perspektiven, Kamerabewegung). Das dauert je nach Menge eine Weile, der Lüfter darf dabei laut werden – du kannst hier trotzdem weiterarbeiten.": "The videos are now being analysed in the background (thumbnails, views, camera motion). Depending on the amount this takes a while and the fan may get loud – you can keep working here.",
  "Die Musik wird gerade analysiert …": "The music is being analysed …",
  "Im Musikordner wurde keine Musik gefunden.": "No music was found in the music folder.",
  "Takt {0} s · {1} Takte": "bar {0} s · {1} bars",

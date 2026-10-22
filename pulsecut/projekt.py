@@ -16,7 +16,7 @@ from .i18n import L as _t, fmt_day_time, get_lang
 from . import ki as KI
 from . import planer as PL
 from .musik import AUDIO_EXT, MUSIC_VERSION, MusikLayout, analyse_music, render_clicktrack, render_music_mix
-from .util import (CONFIG_HOME, FPS, atomic_write_json, fmt_dur, log, md5, read_json, safe_name,
+from .util import (CONFIG_HOME, FPS, atomic_write_json, low_priority, fmt_dur, log, md5, read_json, safe_name,
                    set_log_target)
 from .video import (ANALYSE_VERSION, BEWEGUNG_LABEL, VIDEO_EXT, Clip, analyse_clip, compute_quality, make_proxy,
                     motion_label, prepare_clip_arrays, segment_views, window_motion)
@@ -94,6 +94,7 @@ class Projekt:
             self.cache = {"format": FORMAT, "clips": {}, "meta": {}, "beats": {}, "ton": {}, "texte": {}}
         self.lock = threading.RLock()
         self.save_lock = threading.Lock()
+        self.media_lock = threading.Lock()   # Klick-Spuren und Vorschau-Mix nicht doppelt erzeugen
         self.jobs = {n: Job(n) for n in ("analyse", "musik", "ki", "erkennung", "sprache", "export", "plan")}
         self.clips = []
         self.tracks = []
@@ -229,6 +230,7 @@ class Projekt:
         lk = threading.Lock()
 
         def work(c):
+            low_priority()
             try:
                 if c in todo:
                     c.ana = analyse_clip(c, self.dirs)
@@ -320,6 +322,8 @@ class Projekt:
             self.tracks = tracks
             self.update_layout()
         self.save()
+        job.fortschritt = 0.9
+        self.prepare_audio(job)
         job.text = _t("{n} Musikstücke analysiert", n=len(tracks))
 
     def active_tracks(self):
@@ -338,21 +342,41 @@ class Projekt:
         return self.layout
 
     def music_mix_file(self):
-        if not self.layout:
+        layout = self.layout
+        if not layout:
             return None
-        f = self.dirs["musik"] / f"mix_{self.layout.signature()[:12]}.ogg"
-        if not f.exists():
-            for old in self.dirs["musik"].glob("mix_*.ogg"):
-                old.unlink(missing_ok=True)
-            render_music_mix(self.layout, f)
+        f = self.dirs["musik"] / f"mix_{layout.signature()[:12]}.ogg"
+        with self.media_lock:
+            if not f.exists():
+                for old in self.dirs["musik"].glob("mix_*.ogg"):
+                    old.unlink(missing_ok=True)
+                render_music_mix(layout, f)
         return f
+
+    def click_path(self, t):
+        return self.dirs["musik"] / f"klick_{md5(t['key'])[:12]}.ogg"
 
     def click_file(self, i):
         t = self.tracks[i]
-        f = self.dirs["musik"] / f"klick_{md5(t['key'])[:12]}.ogg"
-        if not f.exists():
-            render_clicktrack(t, f)
+        f = self.click_path(t)
+        with self.media_lock:
+            if not f.exists():
+                render_clicktrack(t, f)
         return f
+
+    def prepare_audio(self, job=None):
+        """Klick-Spuren und Vorschau-Mix gleich vorbereiten, damit „Abspielen“ sofort klappt."""
+        for i in range(len(self.tracks)):
+            if job:
+                job.text = _t("Bereite Klick-Spur vor: {name} …", name=self.tracks[i]["datei"])
+            try:
+                self.click_file(i)
+            except Exception as e:
+                log(f"  {self.tracks[i]['datei']}: {e}")
+        try:
+            self.music_mix_file()
+        except Exception as e:
+            log(f"  Mix: {e}")
 
     def set_music_fix(self, i, aktion, wert=None):
         t = self.tracks[i]
@@ -392,6 +416,10 @@ class Projekt:
             self.update_layout()
         self.save()
         self.save_cache()
+        try:
+            self.click_file(i)   # neue Klick-Spur gleich bereit haben
+        except Exception as e:
+            log(f"  {name}: {e}")
         return nt
 
     def set_music_order(self, order, aktiv):
@@ -414,7 +442,7 @@ class Projekt:
                 "fix": t.get("fix") or {}, "oktave_auto": t.get("oktave_auto", 0),
                 "beats": [round(b, 3) for b in t["beats"]], "down": [1 if d else 0 for d in t["down"]],
                 "kurve": t.get("kurve", [])[::2], "kurve_hz": t.get("kurve_hz", 10) / 2,
-                "klick": f"/media/klick/{i}.ogg?k={md5(t['key'])[:10]}",
+                "klick": f"/media/klick/{i}.ogg?k={md5(t['key'])[:10]}", "klick_bereit": self.click_path(t).exists(),
                 "kuerzen": (self.d.get("kuerzen") or {}).get(t["datei"], "nein")}
 
     def layout_info(self):

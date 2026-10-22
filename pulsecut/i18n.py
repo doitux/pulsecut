@@ -87,6 +87,8 @@ EN = {
         "No music found in the music folder (wav, mp3, flac, m4a, ogg …).",
     "Analysiere Musik: {name} …": "Analysing music: {name} …",
     "{n} Musikstücke analysiert": "{n} music tracks analysed",
+    "Bereite Klick-Spur vor: {name} …": "Preparing click track: {name} …",
+    "Videos warten, bis die Musik fertig analysiert ist …": "Videos wait until the music has been analysed …",
     "Die Videos sind noch nicht analysiert.": "The videos have not been analysed yet.",
     "Bitte zuerst den Ablauf beschreiben (Stichworte).": "Please describe the course of events first (keywords).",
     "KI schaut sich die Videos an … {a}/{b}": "AI is looking at the videos … {a}/{b}",

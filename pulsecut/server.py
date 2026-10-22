@@ -41,6 +41,11 @@ class AppState:
 
     def _analyse_and_restore(self, job):
         pr = self.pr
+        job.text = _t("Videos warten, bis die Musik fertig analysiert ist …")
+        for _ in range(1200):   # erst die Musik (schnell), damit Schritt 2 sofort benutzbar ist
+            if not pr.jobs["musik"].laeuft:
+                break
+            time.sleep(0.5)
         pr.analyse_job(job)
         # Erkennung aus dem Zwischenspeicher wiederherstellen (falls schon einmal gemacht)
         for _ in range(60):
@@ -474,12 +479,10 @@ class Handler(BaseHTTPRequestHandler):
                 return self._file(pr.dirs["proxy"] / f"{m.group(1)}.webm", "video/webm")
             m = re.fullmatch(r"/media/klick/(\d+)\.ogg", p)
             if m:
-                with pr.lock:
-                    f = pr.click_file(int(m.group(1)))
+                f = pr.click_file(int(m.group(1)))
                 return self._file(f, "audio/ogg")
             if p == "/media/mix.ogg":
-                with pr.lock:
-                    f = pr.music_mix_file()
+                f = pr.music_mix_file()
                 return self._file(f, "audio/ogg") if f else self.send_error(404)
             return self.send_error(404)
         except Exception as e:

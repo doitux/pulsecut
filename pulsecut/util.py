@@ -79,7 +79,15 @@ def clean_env(extra=None):
     return env
 
 
+def low_priority(on=True):
+    """Externe Programme dieses Threads mit niedriger Priorität starten (Hintergrund-Analyse), damit die
+    Oberfläche und das Abspielen flüssig bleiben."""
+    _local.nice = bool(on)
+
+
 def run(cmd, check=True, binary=False, input=None, timeout=None):
+    if getattr(_local, "nice", False) and shutil.which("nice"):
+        cmd = ["nice", "-n", "15"] + list(cmd)
     res = subprocess.run([str(c) for c in cmd], stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                          stdin=subprocess.DEVNULL if input is None else None, input=input, timeout=timeout,
                          env=clean_env())
