@@ -16,6 +16,7 @@ import numpy as np
 from . import APP_NAME, VERSION
 from . import erkennung as ER
 from . import export as EX
+from . import hwdec as HW
 from . import ki as KI
 from . import planer as PL
 from .i18n import L as _t, fmt_datetime, get_lang, set_lang
@@ -106,7 +107,7 @@ def zustand():
                           "clips": len(pr.clips), "stuecke": len(pr.tracks),
                           "stichworte": len(pr.d["stichworte"]), "erkennung": pr.erk is not None,
                           "timeline": bool(pr.d.get("timeline")), "exporte": pr.d.get("exporte", []),
-                          "boost": pr.boost,
+                          "boost": pr.boost, "hwdec": HW.status(),
                           "sprache_text": STATE.sprache_text}
     return out
 

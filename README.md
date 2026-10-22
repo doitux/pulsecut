@@ -23,8 +23,10 @@ footage shows children.
 2. **Length.** Use all of the music or a target length. You choose which track is shortened at the start or at the
    end; cuts always happen at the start of a bar.
 3. **Videos** are sorted by recording time from the phone metadata, or by file name. The analysis runs quietly in
-   the background; a *⚡ Full power* switch uses all processor cores. Image quality, changes of view
-   and camera motion (pans, tilts, zooms) are analysed.
+   the background, in a single pass per video, and uses the graphics chip for decoding where that is faster
+   (VAAPI, e.g. Intel onboard graphics; measured once per video format, falls back to the processor otherwise); a
+   *⚡ Full power* switch uses all processor cores. Image quality, changes of view and camera motion (pans, tilts,
+   zooms) are analysed.
 4. **Describe the events**, typed or spoken: *“First everyone arrives by bus, then registration. Every day
    rehearsals, in between free time with football. On the last day the final concert, after that the group
    photo.”* This becomes an ordered list of keywords; “every day” or “in between” marks a keyword as recurring.
@@ -104,6 +106,7 @@ and you assign them yourself.
 | Problem | Solution |
 |---|---|
 | Window stays white or black (graphics driver) | Pulsecut notices this and restarts itself without Vulkan, then without GPU acceleration, and remembers the setting. To choose by hand: `PULSECUT_GRAFIK=opengl` or `PULSECUT_GRAFIK=software` (back to normal: `PULSECUT_GRAFIK=gpu`) |
+| Video analysis does not use the graphics chip | the video step says why. Intel: install `intel-media-va-driver` (newer chips) or `i965-va-driver` (up to about 2016, e.g. Haswell). To switch the chip off: `PULSECUT_HWDEC=0` |
 | Prefer your normal web browser | `./Pulsecut-*.AppImage --browser` |
 | AppImage does not start (“FUSE”) | `./Pulsecut-*.AppImage --appimage-extract-and-run` |
 | Open a project directly | `./Pulsecut-*.AppImage /path/to/Project_Pulsecut` |
@@ -138,7 +141,8 @@ pulsecut/
   server.py     local HTTP server (127.0.0.1 only) with a JSON API
   projekt.py    project state, background jobs, all steps, timeline editing
   musik.py      beat/bar tracking (HMM), track arrangement, click track, preview mix
-  video.py      video analysis (quality, views, camera motion), preview proxies
+  video.py      video analysis (quality, views, camera motion), preview proxies – one ffmpeg pass per video
+  hwdec.py      decoding on the graphics chip (VAAPI): measurement per format, fallback to the processor
   erkennung.py  keywords from German/English text, clip → keyword assignment, scenes, follow-up questions
   planer.py     cut planning with hard rules, repair, slip ranges
   export.py     Kdenlive/MLT project (A/B tracks), titles, rendering with melt or ffmpeg

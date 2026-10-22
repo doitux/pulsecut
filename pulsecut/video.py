@@ -8,6 +8,7 @@ from pathlib import Path
 
 import numpy as np
 
+from . import hwdec as HW
 from .i18n import L as _t
 from .util import (ddist, ffmpeg_cmd, md5, parse_iso, r, run, smoothstep)
 
@@ -41,6 +42,9 @@ class Clip:
         self.w = self.h = 0
         self.fps = 30.0
         self.has_audio = False
+        self.codec = None       # Videocodec, Pixelformat und Drehung (für die Hardware-Dekodierung)
+        self.pix = None
+        self.rot = 0
         self.start = None
         self.time_source = ""
         self.ana = None
@@ -102,6 +106,7 @@ class Clip:
         if abs(rot) % 180 == 90:
             w, h = h, w
         self.w, self.h = w, h
+        self.codec, self.pix, self.rot = vs.get("codec_name") or "", vs.get("pix_fmt") or "", rot
         try:
             num, den = vs.get("avg_frame_rate", "30/1").split("/")
             self.fps = float(num) / float(den) if float(den) else 30.0
@@ -132,13 +137,15 @@ class Clip:
 
     def to_meta(self):
         return {"w": self.w, "h": self.h, "fps": self.fps, "dur": self.dur, "audio": self.has_audio,
-                "start": self.start.isoformat(), "quelle": self.time_source}
+                "start": self.start.isoformat(), "quelle": self.time_source,
+                "codec": self.codec, "pix": self.pix, "rot": self.rot}
 
     def from_meta(self, m):
         self.w, self.h, self.fps, self.dur = m["w"], m["h"], m["fps"], m["dur"]
         self.has_audio = m["audio"]
         self.start = datetime.fromisoformat(m["start"])
         self.time_source = m["quelle"]
+        self.codec, self.pix, self.rot = m.get("codec"), m.get("pix"), m.get("rot", 0)
 
 
 # ═════════════════════════════════════════════ Bild- und Tonanalyse
@@ -258,10 +265,15 @@ def motion_between(g0, g1, dt):
 
 
 def analyse_audio_dsp(path):
-    """Ton-Merkmale je 0,5 s: Lautstärke, Musik-Wahrscheinlichkeit (gehaltene Töne), Rauschanteil."""
+    """Ton-Merkmale je 0,5 s aus einer Datei (eigener Durchgang)."""
     raw = run(ffmpeg_cmd() + ["-i", str(path), "-vn", "-ac", "1", "-ar", "16000", "-f", "f32le", "-"],
               binary=True, check=False)
-    y = np.frombuffer(raw, np.float32)
+    return analyse_audio(np.frombuffer(raw, np.float32))
+
+
+def analyse_audio(y):
+    """Ton-Merkmale je 0,5 s: Lautstärke, Musik-Wahrscheinlichkeit (gehaltene Töne), Rauschanteil.
+    y = Mono-Ton mit 16 kHz."""
     sr, n_fft, hop = 16000, 1024, 512
     if len(y) < sr:
         return None
@@ -319,29 +331,78 @@ def analyse_audio_dsp(path):
     return {"t": r((np.arange(nb) + 0.5) * 0.5, 2), "db": r(db, 1), "musik": r(music, 3), "rauschen": r(noise, 3)}
 
 
-def analyse_clip(clip, dirs):
-    """Bildmerkmale (4/s), Bewegung, Perspektiv-Deskriptoren (2/s), Bilder für KI und Vorschau, Ton."""
+KF_ONLY_AB = 240.0      # längere Videos: für die Analyse nur Schlüsselbilder
+
+
+def keyframes_only(clip):
+    return clip.dur > KF_ONLY_AB
+
+
+def _proxy_args(clip, tmp):
+    """Ausgabe-Optionen der Vorschau-Videos (VP8 + Opus, Schlüsselbild alle 0,4 s)."""
+    g = max(6, int(round(clip.fps * 0.4)))
+    a = ["-c:v", "libvpx", "-deadline", "realtime", "-cpu-used", "8", "-b:v", "800k",
+         "-crf", "28", "-qmin", "4", "-qmax", "48", "-g", str(g), "-auto-alt-ref", "0"]
+    a += (["-map", "0:a:0?", "-c:a", "libopus", "-b:a", "64k", "-ac", "2"] if clip.has_audio else [])
+    return a + [str(tmp)]
+
+
+def _proxy_chain(clip, hw):
+    if hw:
+        pw, ph = HW.proxy_size(clip)
+        return f"{HW.verkleinern(pw, ph, clip.rot)},setsar=1,format=yuv420p"
+    sc = "scale=-2:360" if clip.w >= clip.h else "scale=360:-2"
+    return f"{sc}:flags=bilinear,format=yuv420p"
+
+
+def analyse_clip(clip, dirs, proxy=None, hw=False):
+    """Bildmerkmale (4/s), Bewegung, Perspektiv-Deskriptoren (2/s), Bilder für KI und Vorschau, Ton.
+    In einem einzigen ffmpeg-Durchgang: mit proxy (Pfad) entsteht im selben Lauf das Vorschau-Video, der Ton wird
+    ebenfalls mitgelesen. hw = über den Grafikchip dekodieren (siehe hwdec.py; das Ergebnis ist dasselbe)."""
     if clip.w >= clip.h:
         aw, ah = 256, max(2, int(round(256 * clip.h / clip.w / 2)) * 2)
         kh, kw = 256, max(2, int(round(256 * clip.w / clip.h / 2)) * 2)
     else:
         ah, aw = 256, max(2, int(round(256 * clip.w / clip.h / 2)) * 2)
         kw, kh = 256, max(2, int(round(256 * clip.h / clip.w / 2)) * 2)
-    kf_only = clip.dur > 240
+    kf_only = keyframes_only(clip)
+    if kf_only:
+        proxy = None
     ki_every = 1.0 if clip.dur <= 120 else 2.0
     fdir = dirs["bilder"] / clip.hash
     if fdir.exists():
         shutil.rmtree(fdir)
     fdir.mkdir(parents=True)
-    cmd = ffmpeg_cmd()
+    graph, vin = [], "[0:v]"
+    if proxy:
+        graph.append("[0:v]split=2[pin][xin]")
+        graph.append(f"[pin]{_proxy_chain(clip, hw)}[pv]")
+        vin = "[xin]"
+    pre = "" if kf_only else "fps=4"
+    if hw:
+        pre = ",".join(x for x in (pre, HW.herunterladen(clip.rot, clip.pix)) if x)
+    graph.append(f"{vin}{pre + ',' if pre else ''}split=2[a][b]")
+    graph.append(f"[a]scale={aw}:{ah}:flags=area,format=rgb24[a1]")
+    graph.append(f"[b]fps=1/{ki_every},scale={kw}:{kh}:flags=bicubic[b1]")
+    cmd = ffmpeg_cmd() + HW.eingang(hw)
     if kf_only:
-        cmd += ["-skip_frame", "nokey"]
-    cmd += ["-i", str(clip.path), "-an", "-sn", "-dn", "-filter_complex",
-            f"[0:v]{'' if kf_only else 'fps=4,'}split=2[a][b];[a]scale={aw}:{ah}:flags=area,format=rgb24[a1];"
-            f"[b]fps=1/{ki_every},scale={kw}:{kh}:flags=bicubic[b1]",
+        cmd += ["-skip_frame:v", "nokey"]
+    cmd += ["-i", str(clip.path), "-filter_complex", ";".join(graph),
             "-map", "[a1]"] + (["-fps_mode", "passthrough"] if kf_only else []) + \
            ["-f", "rawvideo", "-pix_fmt", "rgb24", "pipe:1", "-map", "[b1]", "-q:v", "4", str(fdir / "f_%04d.jpg")]
-    raw = run(cmd, binary=True)
+    ptmp = Path(str(proxy) + ".tmp.webm") if proxy else None
+    if proxy:
+        cmd += ["-map", "[pv]"] + _proxy_args(clip, ptmp)
+    tonf = fdir / "ton.f32"
+    if clip.has_audio:
+        cmd += ["-map", "0:a:0?", "-ac", "1", "-ar", "16000", "-f", "f32le", str(tonf)]
+    try:
+        raw = run(cmd, binary=True)
+    except Exception:
+        for f in (ptmp, tonf):
+            if f is not None and f.exists():
+                f.unlink()
+        raise
     fsz = aw * ah * 3
     n = len(raw) // fsz
     if n == 0:
@@ -395,23 +456,29 @@ def analyse_clip(clip, dirs):
     np.save(dirs["deskriptoren"] / f"{clip.hash}.npy", np.stack(descs))
     kfiles = sorted(p.name for p in fdir.glob("f_*.jpg"))
     ki_frames = [[round(min(clip.dur - 0.05, (j + 0.5) * ki_every), 2), nm] for j, nm in enumerate(kfiles)]
-    ton = analyse_audio_dsp(clip.path) if clip.has_audio else None
+    ton = None
+    if clip.has_audio and tonf.exists():
+        ton = analyse_audio(np.fromfile(tonf, np.float32))
+        tonf.unlink()
+    if proxy:
+        ptmp.replace(proxy)
     return {"v": ANALYSE_VERSION, "times": r(times, 3), "bright": r(bright, 1), "contrast": r(contrast, 1),
             "sharp": r(sharp), "cam": r(cam), "resid": r(resid, 5), "hdiff": r(hdiff, 3), "dx": r(dxs), "dy": r(dys),
             "mx": r(mx), "my": r(my), "mz": r(mz), "dtimes": r(dtimes, 2), "ki_frames": ki_frames,
             "keyframes_only": kf_only, "ton": ton}
 
 
-def make_proxy(clip, out):
-    """Kleine WebM-Fassung für die Live-Vorschau im Programm (VP8 + Opus, Schlüsselbild alle 0,4 s)."""
+def make_proxy(clip, out, hw=False):
+    """Kleine WebM-Fassung für die Live-Vorschau im Programm (eigener Durchgang, wenn die Analyse schon da ist)."""
     tmp = Path(str(out) + ".tmp.webm")
-    sc = "scale=-2:360" if clip.w >= clip.h else "scale=360:-2"
-    g = max(6, int(round(clip.fps * 0.4)))
-    cmd = ffmpeg_cmd() + ["-y", "-i", str(clip.path), "-vf", f"{sc}:flags=bilinear,format=yuv420p",
-                          "-c:v", "libvpx", "-deadline", "realtime", "-cpu-used", "8", "-b:v", "800k",
-                          "-crf", "28", "-qmin", "4", "-qmax", "48", "-g", str(g), "-auto-alt-ref", "0"]
-    cmd += (["-c:a", "libopus", "-b:a", "64k", "-ac", "2"] if clip.has_audio else ["-an"])
-    run(cmd + [str(tmp)])
+    cmd = ffmpeg_cmd() + HW.eingang(hw) + ["-y", "-i", str(clip.path), "-filter_complex",
+                                           f"[0:v]{_proxy_chain(clip, hw)}[pv]", "-map", "[pv]"]
+    try:
+        run(cmd + _proxy_args(clip, tmp))
+    except Exception:
+        if tmp.exists():
+            tmp.unlink()
+        raise
     tmp.replace(out)
 
 

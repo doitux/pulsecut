@@ -23,7 +23,7 @@ sind.
 | 1 Projekt | Video- und Musikordner wählen. Musik und Videos werden im Hintergrund analysiert. |
 | 2 Musik & Takt | Jedes Stück mit **Klick-Spur** anhören: hoher Klick = „1“, die Kästchen zählen mit. Korrekturen: Taktanfang ±1 Schlag, Tempo halb/doppelt oder BPM vorgeben, 3/4 oder 4/4, Feinversatz. Reihenfolge der Stücke, Stücke ab- und anwählen, **direkt nacheinander oder mit Überblendung**. |
 | 3 Länge | Ganze Musik oder bestimmte Länge. Ist die Musik zu lang: je Stück *nicht / vorne / hinten kürzen*. Gekürzt wird immer an einem Taktanfang. |
-| 4 Videos | Reihenfolge nach Aufnahmezeit (Handy-Metadaten) oder Dateiname. Clips auf *Raus* oder *Wichtig* setzen. Die Analyse läuft leise im Hintergrund, der Schalter *⚡ Volle Leistung* nimmt alle Prozessorkerne. |
+| 4 Videos | Reihenfolge nach Aufnahmezeit (Handy-Metadaten) oder Dateiname. Clips auf *Raus* oder *Wichtig* setzen. Die Analyse läuft leise im Hintergrund, in einem Durchgang je Video, und dekodiert über den Grafikchip, wo das schneller ist (VAAPI, z. B. Intel-Onboard-Grafik; einmal je Videoformat gemessen, sonst Prozessor). Der Schalter *⚡ Volle Leistung* nimmt alle Prozessorkerne. |
 | 5 Ablauf | Per **Mikrofon** oder Tastatur beschreiben, was in welcher Reihenfolge passiert ist. Daraus werden Stichworte. „jeden Tag“ oder „zwischendurch“ heißt: kommt mehrmals vor. Deutsch und Englisch werden erkannt. |
 | 6 Szenen erkennen | Die KI ordnet die Videos den Stichworten zu und berücksichtigt dabei die beschriebene Reihenfolge. Unsichere Szenen sind markiert. Bei vermutlich vergessenen Programmpunkten fragt sie nach: „Ist da nicht noch *Party / Disco* dabei gewesen?“ |
 | 7 Gewichtung & Reihenfolge | Anteil je Stichwort, je Szene *Raus … Viel mehr*, ganze Blöcke verschieben (z. B. *Gruppenfoto hinter Abschlusskonzert*), einzelne Clips oder Schnitte abwählen. |
@@ -79,6 +79,7 @@ Szenen an den größten Zeitlücken auf deine Stichworte verteilt, und du korrig
 | Problem | Lösung |
 |---|---|
 | Programmfenster bleibt weiß oder schwarz (Grafiktreiber) | Pulsecut merkt das, startet von selbst neu ohne Vulkan, notfalls ohne Grafikbeschleunigung, und merkt sich die Einstellung. Von Hand: `PULSECUT_GRAFIK=opengl` oder `PULSECUT_GRAFIK=software` (zurück: `PULSECUT_GRAFIK=gpu`) |
+| Video-Analyse nutzt den Grafikchip nicht | der Video-Schritt zeigt den Grund. Intel: `intel-media-va-driver` (neuere Chips) oder `i965-va-driver` (bis ca. 2016, z. B. Haswell) installieren. Abschalten: `PULSECUT_HWDEC=0` |
 | Lieber im normalen Browser arbeiten | `./Pulsecut-*.AppImage --browser` |
 | AppImage startet nicht („FUSE“) | `./Pulsecut-*.AppImage --appimage-extract-and-run` |
 | Projekt direkt öffnen | `./Pulsecut-*.AppImage /pfad/zum/Projekt_Pulsecut` |

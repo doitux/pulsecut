@@ -172,6 +172,18 @@ EN = {
     "KI-Erkennung ist nicht eingerichtet": "AI recognition is not set up",
     "lade KI-Modell {m} (beim ersten Mal Download)": "loading AI model {m} (downloaded the first time)",
     "KI-Worker abgebrochen: ": "AI worker stopped: ",
+    # hwdec.py
+    "VAAPI-Treiber fehlt (Paket intel-media-va-driver oder i965-va-driver)":
+        "VAAPI driver missing (package intel-media-va-driver or i965-va-driver)",
+    "vom Grafikchip nicht unterstützt": "not supported by the graphics chip",
+    "Prozessor ist schneller": "processor is faster",
+    "funktioniert nicht: {err}": "does not work: {err}",
+    "10 Bit": "10-bit",
+    "Grafikchip dekodiert {codec} ({x}× so schnell wie der Prozessor)":
+        "graphics chip decodes {codec} ({x}× as fast as the processor)",
+    "{codec}: Dekodierung auf dem Prozessor – {grund}": "{codec}: decoding on the processor – {grund}",
+    "{name}: Grafikchip-Dekodierung gescheitert, nehme den Prozessor":
+        "{name}: decoding on the graphics chip failed, using the processor",
     # util.py
     "Befehl fehlgeschlagen: {cmd} …": "Command failed: {cmd} …",
     # app.py

@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.0.6 – 2026-10-23
+- Faster video analysis in **one pass**: analysis, sound and the preview video now come from a single ffmpeg run
+  (before, every video was read two to three times). The results are identical.
+- **Decoding on the graphics chip** (VAAPI, e.g. Intel onboard graphics): for each video format Pulsecut measures
+  once whether the chip works and is worthwhile, and remembers it. Formats the chip cannot handle (e.g. HEVC on older
+  Intel chips), missing drivers and errors fall back to the processor automatically, per video. The analysis
+  results are the same either way. With “⚡ Full power” two videos go through the chip and the other cores work on
+  the processor at the same time. The video step shows what decodes where. `PULSECUT_HWDEC=0` switches it off.
+
 ## 1.0.5 – 2026-10-22
 - Title library: 12 styles for title and end credits (band, clean, card, light card, glass, lines, frame, lower
   third, highlighter, glow, outline, cinema), any installed font, accent colour, position bottom/centre. The step

@@ -328,6 +328,17 @@ R.laenge = {
 
 /* ── 4 Videos ──────────────────────────────────────────────── */
 let VI = null, viFilter = "alle";
+function hwText(hd) {
+  if (!hd || hd.stand === "aus") return T("Dekodierung: Prozessor (Grafikchip mit PULSECUT_HWDEC=0 abgeschaltet)");
+  if (hd.stand === "kein_geraet") return T("Dekodierung: Prozessor (kein Grafikchip mit VAAPI gefunden)");
+  if (hd.stand === "kein_vaapi") return T`Dekodierung: Prozessor (das installierte ffmpeg kann kein VAAPI für ${hd.geraet})`;
+  const pr = hd.profile || [];
+  if (!pr.length) return T`Dekodierung: Grafikchip ${hd.geraet} – wird beim ersten Video gemessen`;
+  const teile = pr.map(x => x.hw ? (x.faktor ? T`${x.name} über den Grafikchip (${Number(x.faktor).toLocaleString(LANG())}× so schnell)` : T`${x.name} über den Grafikchip`)
+    : T`${x.name} auf dem Prozessor (${x.grund})`);
+  return T`Dekodierung (${hd.geraet}): ${teile.join(" · ")}`;
+}
+
 R.videos = {
   async render(m) {
     m.innerHTML = `<h1>${T("Videos & Reihenfolge")}</h1><p class="lead">${T("Die Videos werden nach Aufnahmezeit (aus den Handy-Metadaten) sortiert – oder nach Dateiname, wenn du sie selbst durchnummeriert hast. Unbrauchbares kannst du hier schon auf „Raus“ setzen, besonders Wichtiges auf „Wichtig“.")}</p>
@@ -346,6 +357,7 @@ R.videos = {
         : `<div class="box row"><b>${T("Videoanalyse")}</b>${seg("boost", [["0", T("Leise im Hintergrund")], ["1", T("⚡ Volle Leistung")]], p.boost ? "1" : "0")}
            <span class="meta">${p.boost ? T("Alle Prozessorkerne arbeiten – schneller fertig, der Lüfter wird laut.") : T("Ein Kern, niedrigste Priorität – Abspielen und Bedienen bleiben flüssig, dauert aber länger.")}</span></div>`;
     }
+    h += `<div class="meta" id="vhw">${esc(hwText(p.hwdec))}</div>`;
     if (el._h === h) return;
     el._h = h; el.innerHTML = h;
     const s = $('[data-f="boost"]', el);

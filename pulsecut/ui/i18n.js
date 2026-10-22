@@ -11,6 +11,14 @@ function T(s, ...v) {
   return v.length ? out.replace(/\{(\d+)\}/g, (_, i) => v[+i]) : out;
 }
 const EN = {
+ "Dekodierung: Prozessor (Grafikchip mit PULSECUT_HWDEC=0 abgeschaltet)": "Decoding: processor (graphics chip switched off with PULSECUT_HWDEC=0)",
+ "Dekodierung: Prozessor (kein Grafikchip mit VAAPI gefunden)": "Decoding: processor (no graphics chip with VAAPI found)",
+ "Dekodierung: Prozessor (das installierte ffmpeg kann kein VAAPI für {0})": "Decoding: processor (the installed ffmpeg has no VAAPI for {0})",
+ "Dekodierung: Grafikchip {0} – wird beim ersten Video gemessen": "Decoding: graphics chip {0} – measured with the first video",
+ "{0} über den Grafikchip ({1}× so schnell)": "{0} on the graphics chip ({1}× as fast)",
+ "{0} über den Grafikchip": "{0} on the graphics chip",
+ "{0} auf dem Prozessor ({1})": "{0} on the processor ({1})",
+ "Dekodierung ({0}): {1}": "Decoding ({0}): {1}",
  "Fehler": "Error",
  "Ja": "Yes",
  "Abbrechen": "Cancel",

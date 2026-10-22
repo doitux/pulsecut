@@ -12,13 +12,14 @@ import numpy as np
 
 from . import erkennung as ER
 from .i18n import L as _t, fmt_day_time, get_lang
+from . import hwdec as HW
 from . import ki as KI
 from . import planer as PL
 from .musik import AUDIO_EXT, MUSIC_VERSION, MusikLayout, analyse_music, render_clicktrack, render_music_mix
 from .util import (CONFIG_HOME, FPS, atomic_write_json, low_priority, fmt_dur, log, md5, read_json, safe_name,
                    set_log_target)
-from .video import (ANALYSE_VERSION, BEWEGUNG_LABEL, VIDEO_EXT, Clip, analyse_clip, compute_quality, make_proxy,
-                    motion_label, prepare_clip_arrays, segment_views, window_motion)
+from .video import (ANALYSE_VERSION, BEWEGUNG_LABEL, VIDEO_EXT, Clip, analyse_clip, compute_quality, keyframes_only,
+                    make_proxy, motion_label, prepare_clip_arrays, segment_views, window_motion)
 
 PROJEKT_DATEI = "pulsecut.json"
 ALTE_PROJEKT_DATEI = "taktschnitt.json"   # Projekte aus Taktschnitt 1.0
@@ -179,7 +180,7 @@ class Projekt:
                 continue
             meta = self.cache["meta"].get(c.key)
             try:
-                if meta:
+                if meta and "codec" in meta:
                     c.from_meta(meta)
                 else:
                     c.probe()
@@ -230,16 +231,36 @@ class Projekt:
         t0 = time.time()
         lk = threading.Lock()
 
+        def with_hw(fn, c, *a):
+            """Über den Grafikchip, wenn er für dieses Format taugt und frei ist – sonst/bei Fehler Prozessor."""
+            err = None
+            with HW.platz(c) as hw:
+                if hw:
+                    try:
+                        return fn(c, *a, hw=True)
+                    except Exception as e:
+                        log("  " + _t("{name}: Grafikchip-Dekodierung gescheitert, nehme den Prozessor",
+                                      name=c.name))
+                        err = e
+            res = fn(c, *a, hw=False)
+            if err is not None:     # nur wenn es auf dem Prozessor klappt, liegt es am Chip
+                HW.fehlgeschlagen(c, err)
+            return res
+
         def work(c):
             low_priority()
             try:
+                proxy_out = self.dirs["proxy"] / f"{c.hash}.webm"
                 if c in todo:
-                    c.ana = analyse_clip(c, self.dirs)
+                    # ein Durchgang: Analyse, Ton und (falls nötig) Vorschau-Video
+                    together = c in need_proxy and not keyframes_only(c)
+                    c.ana = with_hw(lambda cc, hw: analyse_clip(cc, self.dirs, proxy_out if together else None,
+                                                                hw=hw), c)
                     with lk:
                         self.cache["clips"][c.key] = c.ana
-                        done[0] += c.dur
-                if c in need_proxy:
-                    make_proxy(c, self.dirs["proxy"] / f"{c.hash}.webm")
+                        done[0] += c.dur * (1.35 if together else 1.0)
+                if c in need_proxy and not proxy_out.exists():
+                    with_hw(lambda cc, hw: make_proxy(cc, proxy_out, hw=hw), c)
                     with lk:
                         done[0] += c.dur * 0.35
             except Exception as e:
