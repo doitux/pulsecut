@@ -135,9 +135,14 @@ def test_workflow(app):
         pg.fill("#lziel", "3:00")
         pg.press("#lziel", "Enter")
         for i in range(3):   # shorten all three tracks at the end (each keeps at least 20 s)
-            pg.wait_for_selector(f"[data-f=k_{i}]")
-            pg.click(f'[data-f=k_{i}] button[data-v=hinten]')
-            pg.wait_for_timeout(700)
+            for _ in range(5):   # the box is redrawn after every answer – click again if a click got lost
+                pg.wait_for_selector(f"[data-f=k_{i}]")
+                pg.click(f'[data-f=k_{i}] button[data-v=hinten]')
+                try:
+                    pg.wait_for_selector(f'[data-f=k_{i}] button[data-v=hinten].on', timeout=5000)
+                    break
+                except Exception:
+                    pass
         pg.wait_for_function("/(2:5[6-9]|3:0[0-4])/.test(document.querySelector('#lbox h3').innerText)", timeout=30000)
         snap("03_laenge")
         # 4 videos
