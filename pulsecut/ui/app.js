@@ -325,8 +325,10 @@ R.videos = {
       d.innerHTML = `<div class="strip">${c.bilder.map(b => `<img loading="lazy" src="${b}">`).join("")}</div>
         <div class="meta" style="margin-top:5px"><b style="color:var(--ink)">${i + 1}. ${esc(c.name)}</b><br>${esc(c.zeit)} ${c.quelle === "Dateidatum" ? `<span class="pill warn">${T("Zeit unsicher")}</span>` : ""} · ${fmt(c.dauer)} · ${c.hoch ? T("hochkant") : T("quer")} · ${c.sichten === 1 ? T("1 Perspektive") : T`${c.sichten} Perspektiven`} · ${T`brauchbar ${fmt(c.gut)}`}</div>
         <div class="bar" title="${T("Bildqualität")}"><b style="width:${Math.round(c.q * 100)}%"></b></div>
-        <div class="row" style="margin-top:6px">${seg("prio", [["raus", T("Raus"), "raus"], ["", T("Auto")], ["hoch", T("Wichtig"), "hoch"]], c.prio)}</div>`;
+        <div class="row" style="margin-top:6px">${seg("prio", [["raus", T("Raus"), "raus"], ["", T("Auto")], ["hoch", T("Wichtig"), "hoch"]], c.prio)}
+          <span class="meta" title="${T("Originalton dieses Clips: automatisch, bevorzugt oder nie (wo Musik zu hören ist, nie)")}">${T("Ton")}</span>${seg("ton", [["", T("Auto")], ["an", T("An")], ["aus", T("Aus")]], c.ton || "")}</div>`;
       onSeg($('[data-f="prio"]', d), async v => { await api("/api/clip", {name: c.name, prio: v}); c.prio = v; this.draw(); });
+      onSeg($('[data-f="ton"]', d), async v => { await api("/api/clip", {name: c.name, ton: v}); c.ton = v; this.draw(); });
       $(".strip", d).onclick = () => vorschauClip(c.name);
       g.appendChild(d);
     });
@@ -574,7 +576,8 @@ R.schnitt = {
           ${s.uebergang === "blende" ? `<input type="range" id="sbl" min="0.2" max="2" step="0.1" value="${s.blende}"><span id="sblv">${komma((+s.blende).toFixed(1))} s</span>` : ""}</div>
         <div class="row"><span class="lab">${T("Kamera&shy;bewegung")}</span><label><input type="checkbox" id="sbew" ${s.bewegung ? "checked" : ""}> ${T("Für gegenläufige Kamerabewegungen (z. B. Schwenk links → Schwenk rechts, Zoom rein → raus) darf innerhalb einer Szene von der zeitlichen Reihenfolge abgewichen werden")}</label></div>
         <div class="meta" style="margin-left:96px">${T("Aus: streng chronologisch, abwechselnde Bewegungen werden trotzdem bevorzugt. Überlappungen gibt es nie.")}</div>
-        <div class="row"><span class="lab">${T("Originalton")}</span>${seg("ton", [["auto", T("Automatisch (Lachen, Applaus, Jubel)")], ["aus", T("Aus – nur Musik")]], s.originalton)}</div>
+        <div class="row"><span class="lab">${T("Originalton")}</span>${seg("ton", [["aus", T("Nur Musik")], ["dazu", T("Stimmung dazu, Musik bleibt")], ["leiser", T("Stimmung dazu, Musik leiser")]], s.originalton === "aus" ? "aus" : (+s.absenken > 0 ? "leiser" : "dazu"))}</div>
+        <div class="meta" style="margin-left:96px">${s.originalton === "aus" ? T("Der Originalton der Videos bleibt stumm, die ausgewählte Musik läuft durch.") : T("Lachen, Applaus, Jubel, Stimmen und Gruppengeräusche werden erkannt und weich ein- und ausgeblendet – nur wo im Video keine Musik läuft (Proben, Konzerte bleiben stumm). Je Clip lässt sich der Ton unter „Videos“ auf An oder Aus stellen.")}</div>
       </div>
       <div class="box col"><b>${T("Titel & Abspann")}</b>
         <div class="row"><span class="lab">${T("Titel")}</span><input type="text" id="stit" value="${esc(s.titel)}" style="flex:1"></div>
@@ -586,7 +589,7 @@ R.schnitt = {
     onSeg($('[data-f="raster"]', m), async v => { await save({raster: v, k: 0}); this.render(m); });
     onSeg($('[data-f="k"]', m), async v => { await save({k: +v}); this.render(m); });
     onSeg($('[data-f="ueb"]', m), async v => { await save({uebergang: v}); this.render(m); });
-    onSeg($('[data-f="ton"]', m), async v => { await save({originalton: v}); this.render(m); });
+    onSeg($('[data-f="ton"]', m), async v => { await save(v === "aus" ? {originalton: "aus"} : {originalton: "auto", absenken: v === "leiser" ? 5 : 0}); this.render(m); });
     const bl = $("#sbl"); if (bl) { bl.oninput = () => $("#sblv").textContent = komma((+bl.value).toFixed(1)) + " s"; bl.onchange = () => save({blende: +bl.value}); }
     $("#sbew").onchange = e => save({bewegung: e.target.checked});
     ["stit", "sunt", "sabs"].forEach((id, i) => $("#" + id).onchange = e => save({[["titel", "untertitel", "abspann"][i]]: e.target.value}));
@@ -614,7 +617,20 @@ class Player {
   load(tl) {
     this.shots = tl.shots.filter(s => !s.ueber && s.dur > 0); this.xf = tl.xf || 0; this.titles = tl.titel || []; this.D = tl.dauer || 0;
     if (tl.musik && this.audio._src !== tl.musik.mix) { this.audio._src = tl.musik.mix; this.audio.src = tl.musik.mix; }
+    // Musik unter dem Originalton absenken (wie im Export: weich mit dem Ein- und Ausblenden des Tons)
+    this.duckDb = tl.absenken || 0; this.duck = [];
+    for (const s of this.shots) {
+      if (!s.atmo) continue;
+      const last = this.duck[this.duck.length - 1];
+      if (last && last.g === s.atmo.gruppe && Math.abs(last.b - s.tl0) < 0.05) last.b = s.tl1;
+      else this.duck.push({g: s.atmo.gruppe, a: s.tl0, b: s.tl1});
+    }
     this.dirty = true;
+  }
+  musicGain(t) {
+    let d = 0;
+    for (const x of this.duck) if (t > x.a && t < x.b + 0.8) d = Math.max(d, Math.min(1, (t - x.a) / 1.2, (x.b + 0.8 - t) / 1.6));
+    return Math.pow(10, -this.duckDb * d / 20);
   }
   destroy() { this.pause(); this.audio.src = ""; this.pool.forEach(v => { v.pause(); v.removeAttribute("src"); v.load(); }); this.hid.remove(); this.dead = true; }
   play() { if (!this.shots || !this.shots.length) return; if (this.t >= this.D - 0.05) this.t = 0; this.audio.currentTime = this.t; this.audio.play().catch(() => {}); this.playing = true; }
@@ -642,7 +658,7 @@ class Player {
   img(url) { if (!url) return null; let im = this.imgs[url]; if (!im) { im = new Image(); im.onload = () => this.dirty = true; im.src = url; this.imgs[url] = im; } return im.complete && im.naturalWidth ? im : null; }
   frame() {
     if (this.dead || !this.shots || !this.shots.length) return;
-    if (this.playing) { this.t = this.audio.currentTime; if (this.t >= this.D) this.pause(); }
+    if (this.playing) { this.t = this.audio.currentTime; this.audio.volume = this.musicGain(this.t); if (this.t >= this.D) this.pause(); }
     else if (!this.dirty) return;
     this.dirty = false;
     const t = this.t, {L, i} = this.layers(t), want = L.map(l => l.s.id);

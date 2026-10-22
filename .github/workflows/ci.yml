@@ -34,8 +34,8 @@ jobs:
         run: ruff check --select E9,F63,F7,F82,F821,F823 pulsecut tests tools packaging
       - name: Translations complete
         run: python tools/i18n_keys.py
-      - name: Synthetic test media (cached)
-        uses: actions/cache@v4
+      - name: Synthetic test media (restore)
+        uses: actions/cache/restore@v4
         with:
           path: tests/.data
           key: testdata-${{ hashFiles('tests/gen_clips.py', 'tests/gen_music.py') }}-${{ hashFiles('pulsecut/video.py', 'pulsecut/musik.py') }}
@@ -47,6 +47,12 @@ jobs:
         run: |
           set -o pipefail
           python -m pytest -m "not ui and not ki" -v --durations=15 2>&1 | tee core.log
+      - name: Synthetic test media (save, also after failures)
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: tests/.data
+          key: testdata-${{ hashFiles('tests/gen_clips.py', 'tests/gen_music.py') }}-${{ hashFiles('pulsecut/video.py', 'pulsecut/musik.py') }}-${{ github.run_id }}
       - name: Browser tests (German and English)
         env:
           PULSECUT_SCREENSHOTS: ${{ github.workspace }}/screenshots

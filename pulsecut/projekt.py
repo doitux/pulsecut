@@ -35,7 +35,7 @@ def default_data(name, videos, musik):
             "ziel_dauer": None, "kuerzen": {}, "sortierung": "zeit", "clips": {},
             "beschreibung": "", "stichworte": [], "abgelehnt": [], "szenen": {}, "szenen_folge": None,
             "schnitt": {"k": 0, "raster": "takt", "uebergang": "hart", "blende": 0.5, "bewegung": False,
-                        "originalton": "auto", "titel": name, "untertitel": "", "abspann": ""},
+                        "originalton": "auto", "absenken": 5, "titel": name, "untertitel": "", "abspann": ""},
             "timeline": None, "erledigt": []}
 
 
@@ -195,6 +195,7 @@ class Projekt:
         for c in clips or self.clips:
             u = self.d["clips"].get(c.name, {})
             c.prio = u.get("prio", "")
+            c.ton = u.get("ton", "") if u.get("ton") in ("an", "aus") else ""
             c.kat_manuell = u.get("kat", "")
             c.excl = [tuple(x) for x in u.get("aus", [])]
 
@@ -778,7 +779,7 @@ class Projekt:
                           "hoch": c.portrait, "aspect": round(c.aspect, 4), "bild": self.thumb(c, s["src"] + s["dur"] / 2),
                           "atmo": s.get("atmo")})
         lay = self.layout_info()
-        return {"shots": shots, "probleme": probs, "differenz": diff, "k": int(self.d["schnitt"].get("k") or 0) or self.k_default(),
+        return {"shots": shots, "probleme": probs, "differenz": diff, "absenken": self.absenkung_db(), "k": int(self.d["schnitt"].get("k") or 0) or self.k_default(),
                 "xf": self.xf(), "musik": lay, "warnungen": self.d.get("plan_warnungen", []),
                 "titel": self.titles_info(), "dauer": lay["dauer"] if lay else 0}
 
@@ -1128,8 +1129,12 @@ class Projekt:
         job.text = _t("Fertig: {files}", files=", ".join(Path(o).name for o in outs))
 
     # ------------------------------------------------------------------ Originalton
+    MUSIK_RAND = 2.0   # so viele Sekunden vor/nach dem Ausschnitt darf im Clip auch keine Musik laufen
+
     def atmo_plan(self, shots):
-        """Originalton für ganze Szenen mit Lachen/Applaus/Jubel/Gruppe – nie, wo im Clip Musik läuft."""
+        """Originalton für stimmungsvolle Stellen (Lachen, Applaus, Jubel, Menschengruppen) – nie, wo im Clip Musik
+        läuft (auch nicht kurz davor oder danach, z. B. bei Proben und Konzerten). Je Clip lässt sich der Originalton
+        bevorzugen („an“) oder ausschließen („aus“); Musik schließt ihn immer aus."""
         mode = self.d["schnitt"].get("originalton", "auto")
         for s in shots:
             s["atmo"] = None
@@ -1139,7 +1144,15 @@ class Projekt:
         info = {}
         for s in shots:
             c = cl[s["clip"]]
-            info[s["id"]] = audio_window(c, s["src"], s["src"] + s["dur"], self.cache["ton"].get(c.key))
+            if c.ton == "aus":
+                info[s["id"]] = None
+                continue
+            kt = self.cache["ton"].get(c.key)
+            w = audio_window(c, s["src"], s["src"] + s["dur"], kt)
+            if w:
+                rand = audio_window(c, s["src"] - self.MUSIK_RAND, s["src"] + s["dur"] + self.MUSIK_RAND, kt)
+                w["musik"] = max(w["musik"], rand["musik"] if rand else 0.0)
+            info[s["id"]] = w
         cands = []
         groups = []
         for s in shots:
@@ -1152,16 +1165,27 @@ class Projekt:
             if not el:
                 continue
             score = max(info[s["id"]]["ereignis"] for s in el)
-            if score >= 0.4:
-                cands.append((score, el))
+            forced = any(cl[s["clip"]].ton == "an" for s in el)
+            if forced:
+                el = [s for s in el if cl[s["clip"]].ton == "an" or info[s["id"]]["ereignis"] >= 0.4]
+            if score >= 0.4 or forced:
+                cands.append((score + (10.0 if forced else 0.0), el))
         cands.sort(key=lambda x: -x[0])
-        for sid, (_, el) in enumerate(cands[:10]):
+        limit = max(10, sum(1 for sc, _ in cands if sc >= 10.0))
+        for sid, (_, el) in enumerate(cands[:limit]):
             gains = [float(np.clip(-26.0 - info[s["id"]]["db"], -14, 6)) for s in el]
             gm = float(np.median(gains))
             for s, gn in zip(el, gains):
                 s["atmo"] = {"gain_db": round(float(np.clip(gn, gm - 3, gm + 3)), 1), "gruppe": sid,
                              "art": info[s["id"]]["art"]}
-        return len(cands[:10])
+        return len(cands[:limit])
+
+    def absenkung_db(self):
+        """Wie weit die Musik unter dem Originalton leiser wird (0 = gar nicht)."""
+        s = self.d["schnitt"]
+        if s.get("originalton", "auto") == "aus":
+            return 0.0
+        return float(np.clip(float(s.get("absenken", 5) or 0), 0, 18))
 
 
 def audio_window(c, t0, t1, ki_ton=None):

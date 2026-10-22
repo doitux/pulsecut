@@ -41,11 +41,12 @@ jobs:
             ~/.cache/huggingface
           key: ki-${{ runner.os }}-${{ hashFiles('pulsecut/ki.py') }}
           restore-keys: ki-${{ runner.os }}-${{ hashFiles('pulsecut/ki.py') }}-
-      - name: Synthetic test media (cached)
-        uses: actions/cache@v4
+      - name: Synthetic test media (restore)
+        uses: actions/cache/restore@v4
         with:
           path: tests/.data
-          key: testdata-ki-${{ hashFiles('tests/gen_clips.py', 'tests/gen_music.py') }}-${{ hashFiles('pulsecut/video.py', 'pulsecut/musik.py') }}
+          key: testdata-${{ hashFiles('tests/gen_clips.py', 'tests/gen_music.py') }}-${{ hashFiles('pulsecut/video.py', 'pulsecut/musik.py') }}
+          restore-keys: testdata-${{ hashFiles('tests/gen_clips.py', 'tests/gen_music.py') }}-
       - name: AI tests
         run: |
           set -o pipefail

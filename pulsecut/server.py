@@ -117,7 +117,7 @@ def videos_info(pr):
         kf = c.ana.get("ki_frames", []) if c.ana else []
         out.append({"name": c.name, "ordner": c.path.parent.name, "zeit": fmt_datetime(c.start),
                     "quelle": c.time_source, "dauer": round(c.dur, 1), "hoch": c.portrait,
-                    "q": round(c.mean_q, 2), "prio": c.prio, "sichten": len(c.segs),
+                    "q": round(c.mean_q, 2), "prio": c.prio, "ton": c.ton, "sichten": len(c.segs),
                     "bilder": [f"/bild/{c.hash}/{kf[int(round(i))][1]}" for i in np.linspace(0, len(kf) - 1, min(4, len(kf)))] if kf else [],
                     "gut": round(c.good_sec, 1)})
     return {"clips": out, "sortierung": pr.d.get("sortierung", "zeit"), "laeuft": pr.jobs["analyse"].laeuft,
@@ -252,7 +252,7 @@ def api_post(path, b, raw=None, ctype=""):
     if path == "/api/clip":
         name = b["name"]
         kw = {}
-        for k in ("prio", "kat"):
+        for k in ("prio", "kat", "ton"):
             if k in b:
                 kw[k] = b[k] or ""
         if "aus_weg" in b:   # abgewählte Stelle wieder erlauben
@@ -329,7 +329,8 @@ def api_post(path, b, raw=None, ctype=""):
         return {"anteile": anteile(pr)}
     if path == "/api/schnitt":
         s = pr.d["schnitt"]
-        for k in ("k", "raster", "uebergang", "blende", "bewegung", "originalton", "titel", "untertitel", "abspann"):
+        for k in ("k", "raster", "uebergang", "blende", "bewegung", "originalton", "absenken", "titel", "untertitel",
+                  "abspann"):
             if k in b:
                 s[k] = b[k]
         s["k"] = int(s.get("k") or 0)

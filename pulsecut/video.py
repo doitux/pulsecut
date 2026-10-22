@@ -55,6 +55,7 @@ class Clip:
         self.order = idx
         # vom Benutzer
         self.prio = ""          # "" / "hoch" / "raus"
+        self.ton = ""           # Originalton: "" automatisch / "an" bevorzugt / "aus" nie
         self.kat_manuell = ""   # Stichwort-ID
         self.excl = []          # abgewählte Passagen
 

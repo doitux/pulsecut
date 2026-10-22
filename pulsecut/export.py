@@ -353,6 +353,62 @@ def atmo_entries(shots, total_frames, clips):
     return out
 
 
+def duck_spans(entries):
+    """Bereiche (Frames), in denen Originalton läuft: (Absenken beginnt, ganz unten, wieder hoch, zurück).
+    Die Musik folgt den weichen Ein- und Ausblendungen des Originaltons."""
+    spans = []
+    for e in sorted(entries, key=lambda e: e["pos"]):
+        a0, b0 = e["pos"], e["pos"] + e["len"]
+        if spans and a0 <= spans[-1][3] + 1:
+            s = spans[-1]
+            spans[-1] = [s[0], s[1], max(s[2], b0 - e["fo"]), max(s[3], b0)]
+        else:
+            spans.append([a0, a0 + max(1, e["fi"]), b0 - max(1, e["fo"]), b0])
+    for s in spans:
+        if s[2] < s[1]:
+            s[1] = s[2] = (s[1] + s[2]) // 2
+    return [tuple(s) for s in spans]
+
+
+def duck_at(f, spans, db):
+    """Absenkung der Musik in dB (≥ 0) bei Frame f."""
+    best = 0.0
+    for a0, a1, b1, b0 in spans:
+        if a0 < f < b0:
+            up = 1.0 if f >= a1 else (f - a0) / max(1, a1 - a0)
+            down = 1.0 if f <= b1 else (b0 - f) / max(1, b0 - b1)
+            best = max(best, min(up, down))
+    return db * best
+
+
+def duck_filter(p0, n, spans, db):
+    """Lautstärke-Keyframes für einen Musik-Eintrag ab Frame p0 (Länge n) – None, wenn er nicht betroffen ist."""
+    if db <= 0:
+        return None
+    pts = {p0, p0 + n - 1}
+    for s in spans:
+        if s[3] > p0 and s[0] < p0 + n:
+            pts.update(x for x in s if p0 <= x < p0 + n)
+    keys = [(f - p0, -duck_at(f, spans, db)) for f in sorted(pts)]
+    if all(abs(k[1]) < 0.05 for k in keys):
+        return None
+    return volume_kf(n, keys)
+
+
+def duck_expr(spans, db):
+    """Dasselbe als ffmpeg-Ausdruck (linearer Faktor über t in Sekunden)."""
+    if db <= 0 or not spans:
+        return None
+    terms = []
+    for a0, a1, b1, b0 in spans:
+        a0, a1, b1, b0 = (x / FPS for x in (a0, a1, b1, b0))
+        terms.append(f"max(0,min(min(1,(t-{a0:.3f})/{max(0.04, a1 - a0):.3f}),(({b0:.3f})-t)/{max(0.04, b0 - b1):.3f}))")
+    expr = terms[0]
+    for t in terms[1:]:
+        expr = f"max({expr},{t})"
+    return f"pow(10,-{db / 20:.4f}*min(1,{expr}))"
+
+
 # ═════════════════════════════════════════════ Projekt schreiben
 
 def frame_plan(shots, D, xf):
@@ -441,7 +497,9 @@ def write_project(pr, path, W=1920, H=1080, mit_marker=True):
             bgl.append(dict(ent, filters=bg_filters(c, W, H) + fl))
         main.append(dict(ent, filters=list(fl)))
     a1, a2, a3, a4 = [], [], [], []
-    for e in atmo_entries(fp, total, clips):
+    entries = atmo_entries(fp, total, clips)
+    spans, duck_db = duck_spans(entries), pr.absenkung_db()
+    for e in entries:
         ln, g = e["len"], e["gain"]
         fi, fo = e["fi"], e["fo"]
         lo_in, lo_out = (-40.0 if e["first"] else -24.0), (-40.0 if e["last"] else -24.0)
@@ -468,6 +526,9 @@ def write_project(pr, path, W=1920, H=1080, mit_marker=True):
             fl.append(audio_fade_in(max(2, int(sg["fade_in"] * FPS))))
         if sg["fade_out"] > 0:
             fl.append(audio_fade_out(n, max(2, int(sg["fade_out"] * FPS))))
+        dk = duck_filter(p0, n, spans, duck_db)   # Musik unter dem Originalton etwas leiser
+        if dk:
+            fl.append(dk)
         (a1 if sg["lane"] == 0 else a2).append({"pos": p0, "kid": tkid[sg["track"]], "in": fin, "out": fin + n - 1,
                                                 "filters": fl})
     tracks = [{"kind": "audio", "name": _t("Originalton 2"), "entries": a4},
@@ -583,7 +644,13 @@ def render_ffmpeg(pr, out, fmt, progress=None):
     ins, fl = pr.layout.ffmpeg_mix_args(D)
     idx = len(pr.layout.segments)
     atmo = []
-    for e in atmo_entries(fp, total, clips):
+    entries = atmo_entries(fp, total, clips)
+    dx = duck_expr(duck_spans(entries), pr.absenkung_db())
+    mlabel = "[musik]"
+    if dx:
+        fl.append(f"[musik]volume='{dx}':eval=frame[musikd]")
+        mlabel = "[musikd]"
+    for e in entries:
         d = e["len"] / FPS
         ins += ["-ss", f"{e['in'] / FPS:.3f}", "-t", f"{d:.3f}", "-i", str(e["clip"].path)]
         ms = int(round(e["pos"] / FPS * 1000))
@@ -592,9 +659,9 @@ def render_ffmpeg(pr, out, fmt, progress=None):
         atmo.append(f"[at{idx}]")
         idx += 1
     if atmo:
-        fl.append(f"[musik]{''.join(atmo)}amix=inputs={1 + len(atmo)}:normalize=0:duration=first,atrim=0:{D:.3f}[aout]")
+        fl.append(f"{mlabel}{''.join(atmo)}amix=inputs={1 + len(atmo)}:normalize=0:duration=first,atrim=0:{D:.3f}[aout]")
     else:
-        fl.append(f"[musik]anull[aout]")
+        fl.append(f"{mlabel}anull[aout]")
     vin = idx
     ins += ["-i", str(video)]
     vchain = f"[{vin}:v]null[v0]"

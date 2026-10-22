@@ -41,7 +41,10 @@ footage shows children.
    or swiping (its length stays on the beat); if it bumps into a neighbouring shot from the same clip, Pulsecut asks
    whether to give the neighbour up. Double or triple a shot's length, reorder by dragging, suggest another passage,
    remove. Everything you change is locked and survives re-planning.
-9. **Finish.** A Kdenlive project (A/B tracks for crossfades, music with bar markers, guides per keyword, titles,
+9. **Original sound.** Three options: *music only*; *atmosphere added, music stays*; *atmosphere added, music
+   quieter*. Laughter, applause, cheering, voices and crowd sounds are detected and faded in and out softly – but
+   never where music can be heard in the video (rehearsals, concerts). Per clip the sound can be set to on or off.
+10. **Finish.** A Kdenlive project (A/B tracks for crossfades, music with bar markers, guides per keyword, titles,
    original sound on its own tracks) and renders in Full HD, 4K, 720p, portrait 9:16 and ProRes master.
 
 The interface is available in **English and German** (switch at the top right).
