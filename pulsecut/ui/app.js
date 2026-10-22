@@ -268,6 +268,7 @@ R.laenge = {
   async render(m) {
     m.innerHTML = `<h1>${T("Gesamtlänge")}</h1><p class="lead">${T("So lang ist deine Musik zusammen. Soll der Film kürzer werden, sag hier welches Stück gekürzt wird – vorne oder hinten. Gekürzt wird immer an einem Taktanfang mit weicher Blende.")}</p><div id="lbox">${T("Lade …")}</div>${weiter("videos")}`;
     bindWeiter(m);
+    this.kz = null;   // Auswahl „kürzen“ sammeln – schnelle Klicks hintereinander gehen so nicht verloren
     MU = await api("/api/musik"); this.draw();
   },
   onJob(n) { if (n === "musik") api("/api/musik").then(d => { MU = d; this.draw(); }); },
@@ -292,7 +293,7 @@ R.laenge = {
     au.ontimeupdate = () => drawWelle(cv, L, {pos: au.currentTime});
     onSeg($('[data-f="mode"]', b), async v => { MU = await api("/api/musik/einstellungen", {ziel: v === "ziel" ? Math.round(Math.min(inf.voll, 300)) : null}); this.draw(); });
     const zi = $("#lziel"); if (zi) zi.onchange = async () => { const p = zi.value.split(":"); const s = p.length > 1 ? (+p[0]) * 60 + (+p[1]) : +p[0]; if (s > 10) { MU = await api("/api/musik/einstellungen", {ziel: s}); this.draw(); } };
-    MU.stuecke.forEach(t => { const s = $(`[data-f="k_${t.i}"]`, b); if (s) onSeg(s, async v => { const k = Object.assign({}, MU.kuerzen); k[t.datei] = v; MU = await api("/api/musik/einstellungen", {kuerzen: k}); this.draw(); }); });
+    MU.stuecke.forEach(t => { const s = $(`[data-f="k_${t.i}"]`, b); if (s) onSeg(s, async v => { this.kz = Object.assign({}, this.kz || MU.kuerzen); this.kz[t.datei] = v; MU = await api("/api/musik/einstellungen", {kuerzen: this.kz}); this.draw(); }); });
   },
   leave() { const a = $("#lmix"); if (a) a.pause(); }
 };
