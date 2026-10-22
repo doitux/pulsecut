@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.4 – 2026-10-22
+- Videos set to “Out” in the video step stay out: the recognition ignores them (the recognition step says how many).
+- Wrongly sorted scenes: the selection under each scene (recognition step) and next to each scene and clip
+  (weighting step) can move it to another keyword, create a **new keyword** right there, or take it out. A new
+  keyword is placed where its scenes happened and works without running the AI again.
+
 ## 1.0.3 – 2026-10-22
 - Video analysis runs quietly by default (one worker, lowest priority for the analysis threads and the ffmpeg
   processes) so music check and playback stay smooth. In the video step a switch “⚡ Full power” uses all cores

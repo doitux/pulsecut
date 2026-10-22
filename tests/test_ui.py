@@ -150,7 +150,11 @@ def test_workflow(app):
         wait_job("analyse")
         pg.wait_for_selector("#vgrid .card")
         pg.wait_for_timeout(800)
-        assert len(pg.query_selector_all("#vgrid .card")) == 38
+        cards = pg.query_selector_all("#vgrid .card")
+        assert len(cards) == 38
+        excluded = pg.eval_on_selector("#vgrid .card:nth-child(14) .meta b", "e=>e.innerText").split(". ", 1)[1]
+        pg.click("#vgrid .card:nth-child(14) [data-f=prio] button[data-v=raus]")   # this clip must not come back
+        pg.wait_for_timeout(800)
         snap("04_videos")
         # 5 description: voice input (fake microphone + simulated speech model), then the full text
         pg.click("[data-go=ablauf]")
@@ -183,6 +187,19 @@ def test_workflow(app):
         pg.click(".frage button[data-a=ja]")
         wait_job("erkennung")
         pg.wait_for_function(f"document.querySelectorAll('.kwgruppe').length === {n_kw + 1}", timeout=60000)
+        er = pg.evaluate("fetch('/api/erkennung').then(r=>r.json())")["erkennung"]
+        assert er["ausgeschlossen"] == 1
+        assert all(c["name"] != excluded for z in er["szenen"] for c in z["clipliste"]), "clip set to Out came back"
+        # move the first scene into a new keyword
+        new_name = "Test category" if lang == "en" else "Testkategorie"
+        pg.select_option(".szk .zkw >> nth=0", "__neu__")
+        pg.wait_for_selector("#mein")
+        pg.fill("#mein", new_name)
+        pg.click("#modal .weiter .pri")
+        pg.wait_for_function(f"document.querySelectorAll('.kwgruppe').length === {n_kw + 2}", timeout=60000)
+        heads = pg.eval_on_selector_all(".kwgruppe .kopf b", "e=>e.map(x=>x.innerText)")
+        assert new_name in heads
+        n_groups = n_kw + 2
         # 7 weighting & order: group photo after the concert
         pg.click("[data-go=gewichtung]")
         pg.wait_for_selector(".gewicht")
@@ -193,7 +210,7 @@ def test_workflow(app):
         pg.select_option("#bk2", konzert)
         pg.click("#bkgo")
         pg.wait_for_timeout(800)
-        order = pg.eval_on_selector_all(".szrow", "e=>e.map(x=>x.querySelector('b').innerText)")
+        order = pg.eval_on_selector_all(".szrow", "e=>e.map(x=>x.querySelector('.zkw').selectedOptions[0].innerText)")
         names = dict(opts)
         last_concert = max(i for i, n in enumerate(order) if n == names[konzert])
         assert all(i > last_concert for i, n in enumerate(order) if n == names[foto])

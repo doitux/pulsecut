@@ -123,3 +123,22 @@ def test_analysis_quiet_and_boost(media, tmp_path):
     pr.analyse_job(job)
     assert len(pr.clips) == 4 and all(c.ana for c in pr.clips)
     assert all((pr.dirs["proxy"] / f"{c.hash}.webm").exists() for c in pr.clips)
+
+
+def test_excluded_clips_and_new_keyword(projekt):
+    prepare(projekt)
+    out = projekt.clips[13]
+    projekt.set_clip(out.name, prio="raus")
+    projekt.compute_erkennung()
+    assert all(c.name != out.name for z in projekt.scenes for c in z["clips"])
+    assert projekt.erkennung_info()["ausgeschlossen"] == 1
+    # a wrongly sorted scene gets its own new keyword, placed where it happened in the course of events
+    z = next(z for z in projekt.scenes if len(z["clips"]) >= 1 and z["kw"] == projekt.d["stichworte"][3]["id"])
+    new = projekt.neues_stichwort("Abschlussparty", list(z["clips"]))
+    ids = [k["id"] for k in projekt.d["stichworte"]]
+    assert new["id"] in ids and len(ids) == 11
+    assert all(c.kw == new["id"] for c in z["clips"])
+    assert any(s["kw"] == new["id"] for s in projekt.scenes)
+    assert projekt.erk["ki"], "recognition fell back to no-AI mode after adding a keyword"
+    projekt.plan(keep_locked=False)
+    assert problems(projekt) == ([], 0)

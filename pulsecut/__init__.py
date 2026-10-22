@@ -1,3 +1,3 @@
 """Pulsecut – Videos automatisch auf den Takt der Musik schneiden."""
-VERSION = "1.0.3"
+VERSION = "1.0.4"
 APP_NAME = "Pulsecut"

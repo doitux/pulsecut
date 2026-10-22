@@ -535,16 +535,19 @@ class Projekt:
         """Zuordnung Clip → Stichwort, Szenen, Unklares, Rückfragen."""
         kws = self.d["stichworte"]
         K = len(kws)
+        # Videos, die unter „Videos“ auf Raus stehen, spielen für die Erkennung keine Rolle
+        act = [c for c in self.clips if c.prio != "raus"]
+        for c in self.clips:
+            if c.prio == "raus":
+                c.kw, c.kw_sicher, c._frame_sims = None, 1.0, None
         if T is None:
-            texts = [ER.kw_text(k) for k in kws] + ER.voc_texts()
-            if all(t in self.cache["texte"] for t in texts):
-                T = np.array([self.cache["texte"][t] for t in texts], np.float32)
+            T = self._text_matrix(kws, act)
         kw_emb = T[:K] if T is not None else np.zeros((0, 512))
         voc_emb = T[K:] if T is not None else None
         self.voc_emb = voc_emb
         sims, sims_voc = [], {}
         sim_kw = {}
-        for c in self.clips:
+        for c in act:
             E = self.clip_emb(c) if T is not None else None
             s = ER.clip_sims(E, kw_emb) if E is not None and len(kw_emb) else None
             sims.append(s)
@@ -556,18 +559,18 @@ class Projekt:
             else:
                 c._frame_sims = None
         idx = self.kw_index()
-        manuell = {i: idx[c.kat_manuell] for i, c in enumerate(self.clips) if c.kat_manuell in idx}
-        path, conf = ER.zuordnen(self.clips, sims, kws, manuell)
-        for c, k, p in zip(self.clips, path, conf):
+        manuell = {i: idx[c.kat_manuell] for i, c in enumerate(act) if c.kat_manuell in idx}
+        path, conf = ER.zuordnen(act, sims, kws, manuell)
+        for c, k, p in zip(act, path, conf):
             c.kw = kws[k]["id"] if k is not None else None
             c.kw_sicher = p
-        scenes = ER.szenen_bilden(self.clips, path, conf, kws)
+        scenes = ER.szenen_bilden(act, path, conf, kws)
         frage = ER.rueckfragen(scenes, sim_kw, sims_voc, kw_emb, voc_emb if voc_emb is not None else np.zeros((0, 512)),
                                kws, set(self.d.get("abgelehnt") or []), idx, get_lang()) if T is not None else []
         self.erk = {"ki": T is not None and any(s is not None for s in sims), "fragen": frage}
         self.base_scenes = scenes
         self.kw_bonus = {}
-        for c in self.clips:
+        for c in act:
             fs = getattr(c, "_frame_sims", None)
             if fs is not None and c.kw in idx and len(fs):
                 v = fs[:, idx[c.kw]]
@@ -575,6 +578,47 @@ class Projekt:
                 kt = [f[0] for f in c.ana["ki_frames"]]
                 self.kw_bonus[c.key] = np.interp(c.grid, kt[:len(z)], z) if len(kt) >= 1 else None
         self.update_scenes()
+
+    def _text_matrix(self, kws, act):
+        """Text-Merkmale aus dem Zwischenspeicher. Fehlt ein Stichwort (neu angelegt oder umbenannt), steht für
+        es der Mittelwert der Bilder, die du ihm von Hand zugeordnet hast – so geht es ohne erneuten KI-Lauf."""
+        cache = self.cache["texte"]
+        texts = [ER.kw_text(k) for k in kws]
+        voc = ER.voc_texts()
+        if not kws or not any(t in cache for t in texts) or not all(t in cache for t in voc):
+            return None
+        rows = []
+        for k, t in zip(kws, texts):
+            if t in cache:
+                rows.append(np.asarray(cache[t], np.float32))
+                continue
+            proto = [self.clip_emb(c) for c in act if c.kat_manuell == k["id"]]
+            proto = [p.astype(np.float32).mean(axis=0) for p in proto if p is not None and len(p)]
+            v = np.mean(proto, axis=0) if proto else np.zeros(len(rows[0]) if rows else 512, np.float32)
+            n = float(np.linalg.norm(v))
+            rows.append(v / n if n > 0 else v)
+        return np.vstack(rows + [np.asarray(cache[t], np.float32) for t in voc])
+
+    def neues_stichwort(self, name, clips):
+        """Neues Stichwort anlegen und diese Clips ihm zuordnen. Es kommt an die Stelle im Ablauf, an der die
+        Clips zeitlich liegen."""
+        name = (name or "").strip()[:40]
+        if not name or not clips:
+            raise RuntimeError(_t("Bitte einen Namen angeben."))
+        kws = self.d["stichworte"]
+        first = min(clips, key=lambda c: c.order)
+        prev = [c for c in self.clips if c.order < first.order and c.prio != "raus" and c.kw and c not in clips]
+        ids = [k["id"] for k in kws]
+        pos = ids.index(prev[-1].kw) + 1 if prev and prev[-1].kw in ids else 0
+        new = {"id": f"k{int(time.time() * 1000) % 10 ** 8}", "name": name, "text": name, "wiederkehrend": False,
+               "gewicht": 1.0}
+        kws.insert(pos, new)
+        for c in clips:
+            self.d["clips"].setdefault(c.name, {})["kat"] = new["id"]
+        self.save()
+        self.apply_user_clip_settings()
+        self.compute_erkennung()
+        return new
 
     def update_scenes(self):
         """Szenen mit Menge und Filmreihenfolge (Standard: chronologisch / Reihenfolge der Videos)."""
@@ -621,6 +665,7 @@ class Projekt:
         scenes = [self.scene_info(z, colors) for z in self.scenes]
         unklar = [s["id"] for s in scenes if s["sicherheit"] < 0.55 and self.erk["ki"]]
         return {"ki": self.erk["ki"], "gruppen": groups, "szenen": scenes, "unklar": unklar,
+                "ausgeschlossen": sum(1 for c in self.clips if c.prio == "raus"),
                 "fragen": self.erk["fragen"], "farben": colors,
                 "von_hand": bool(self.d.get("szenen_folge"))}
 

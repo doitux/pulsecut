@@ -269,7 +269,7 @@ def api_post(path, b, raw=None, ctype=""):
             a0, a1 = b["aus_weg"]
             kw["aus"] = [x for x in u.get("aus", []) if not (abs(x[0] - a0) < 0.05 and abs(x[1] - a1) < 0.05)]
         pr.set_clip(name, **kw)
-        if "kat" in b and pr.erk is not None:
+        if ("kat" in b or "prio" in b) and pr.erk is not None:
             pr.compute_erkennung()
         return {}
     if path == "/api/ablauf":
@@ -313,6 +313,22 @@ def api_post(path, b, raw=None, ctype=""):
             pr.start_job("erkennung", pr.erkennung_job, True)
         else:
             pr.compute_erkennung()
+        return {}
+    if path == "/api/stichwort/neu":   # neues Stichwort für eine Szene oder einen Clip
+        cl = pr.clip_by_name()
+        if b.get("szene"):
+            z = next((z for z in pr.scenes if z["id"] == b["szene"]), None)
+            clips = list(z["clips"]) if z else []
+        else:
+            clips = [cl[b["clip"]]] if b.get("clip") in cl else []
+        return {"stichwort": pr.neues_stichwort(b.get("name", ""), clips)}
+    if path == "/api/szene/raus":   # ganze Szene nicht verwenden
+        z = next((z for z in pr.scenes if z["id"] == b.get("id")), None)
+        for c in (z["clips"] if z else []):
+            pr.d["clips"].setdefault(c.name, {})["prio"] = "raus"
+        pr.save()
+        pr.apply_user_clip_settings()
+        pr.compute_erkennung()
         return {}
     if path == "/api/szene/kw":
         z = next((z for z in pr.scenes if z["id"] == b["id"]), None)

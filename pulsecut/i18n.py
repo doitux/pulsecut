@@ -97,6 +97,7 @@ EN = {
     "Vergleiche mit deinen Stichworten …": "Comparing with your keywords …",
     "Erkennung fertig": "Recognition finished",
     "Teil {n}": "Part {n}",
+    "Bitte einen Namen angeben.": "Please enter a name.",
     "Die Musik ist noch nicht bereit.": "The music is not ready yet.",
     "Es gibt noch keine Szenen – bitte zuerst die Erkennung ausführen.":
         "There are no scenes yet – please run the recognition first.",
