@@ -81,6 +81,9 @@ jobs:
     runs-on: ubuntu-latest
     container: ubuntu:22.04
     timeout-minutes: 60
+    defaults:
+      run:
+        shell: bash
     steps:
       - name: git for checkout
         run: apt-get update && apt-get install -y --no-install-recommends git ca-certificates
