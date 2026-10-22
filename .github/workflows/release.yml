@@ -3,6 +3,7 @@ name: Release
 on:
   push:
     tags: ["v*"]
+  workflow_dispatch:   # build and test only (no release)
 
 permissions:
   contents: write
@@ -21,6 +22,7 @@ jobs:
         run: apt-get update && apt-get install -y --no-install-recommends git ca-certificates
       - uses: actions/checkout@v4
       - name: Version matches tag
+        if: startsWith(github.ref, 'refs/tags/')
         run: |
           V=$(sed -n 's/^VERSION = "\(.*\)"/\1/p' pulsecut/__init__.py)
           test "v$V" = "${GITHUB_REF_NAME}" || { echo "Tag ${GITHUB_REF_NAME} does not match VERSION $V"; exit 1; }
@@ -39,7 +41,16 @@ jobs:
         run: |
           tools/ci_tail.sh build.log 80
           tools/ci_tail.sh smoke.log 80
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Pulsecut-AppImage
+          path: |
+            dist/Pulsecut-*-x86_64.AppImage
+            dist/SHA256SUMS
+            dist/window.png
+          retention-days: 14
       - name: Release notes
+        if: startsWith(github.ref, 'refs/tags/')
         run: |
           V="${GITHUB_REF_NAME#v}"
           {
@@ -61,6 +72,7 @@ jobs:
             echo "Deutsch: AppImage herunterladen, ausführbar machen, starten. Anleitung: [README.de.md](https://github.com/${GITHUB_REPOSITORY}/blob/${GITHUB_REF_NAME}/README.de.md)"
           } > dist/NOTES.md
       - uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/')
         with:
           name: Pulsecut ${{ github.ref_name }}
           body_path: dist/NOTES.md

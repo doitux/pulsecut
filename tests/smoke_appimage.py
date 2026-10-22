@@ -27,9 +27,9 @@ def make_media(root):
     vid.mkdir(parents=True)
     mus.mkdir()
     for i, (src, t) in enumerate([("testsrc2", "10:00"), ("smptehdbars", "10:20"), ("rgbtestsrc", "11:40"),
-                                  ("testsrc2=s=720x1280", "12:00")]):
+                                  ("testsrc2=s=720x1280", "12:00"), ("smptebars", "12:30"), ("testsrc", "13:00")]):
         s = src if "=" in src else src + "=s=1280x720"
-        ff("-f", "lavfi", "-i", f"{s}:r=30:d=12", "-f", "lavfi", "-i", "sine=f=440:d=12",
+        ff("-f", "lavfi", "-i", f"{s}:r=30:d=20", "-f", "lavfi", "-i", "sine=f=440:d=20",
            "-c:v", "libx264", "-preset", "ultrafast", "-c:a", "aac", "-shortest",
            "-metadata", f"creation_time=2026-07-13T{t}:00Z", vid / f"VID_{i}.mp4")
     beat = "0.8*sin(2*PI*55*t)*exp(-25*mod(t,0.5))+0.2*sin(2*PI*440*t)*exp(-6*mod(t,0.5))"
@@ -95,7 +95,7 @@ def main():
         time.sleep(1)
         wait("analyse", "musik")
         v = get("/api/videos")
-        assert len(v["clips"]) == 4, v
+        assert len(v["clips"]) == 6, v
         m = get("/api/musik")
         print("music:", [(t["datei"], t["bpm"], t["takt"]) for t in m["stuecke"]])
         assert m["stuecke"] and abs(m["stuecke"][0]["bpm"] - 120) < 3

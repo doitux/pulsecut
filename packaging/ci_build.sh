@@ -12,7 +12,7 @@ apt-get install -y --no-install-recommends \
   libxkbcommon0 libxkbcommon-x11-0 libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-randr0 \
   libxcb-render-util0 libxcb-shape0 libxcb-xinerama0 libxcb-xkb1 libxcb-xfixes0 libxcb-sync1 libxcb-shm0 \
   libxcomposite1 libxdamage1 libxrandr2 libxtst6 libxkbfile1 libxshmfence1 libgbm1 libdrm2 libxss1 \
-  libwayland-client0 libwayland-cursor0 libwayland-egl1 libcups2 libpulse0
+  libwayland-client0 libwayland-cursor0 libwayland-egl1 libcups2 libpulse0 libatomic1
 python3 -m venv /opt/build-venv
 /opt/build-venv/bin/pip install --upgrade pip
 /opt/build-venv/bin/pip install -r "$ROOT/packaging/requirements-build.txt"
