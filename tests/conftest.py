@@ -66,3 +66,16 @@ def prepare(pr, beschreibung=None, ziel=None, **schnitt):
     pr.d["timeline"] = None
     pr.plan(keep_locked=False)
     return lab
+
+
+def pytest_runtest_logreport(report):
+    """On GitHub Actions: failures become annotations (readable via the API without downloading logs)."""
+    if not os.environ.get("GITHUB_ACTIONS") or not report.failed:
+        return
+    text = str(report.longrepr)
+    lines = [ln for ln in text.splitlines() if ln.startswith("E ") or "Error" in ln][-25:] or text.splitlines()[-25:]
+    msg = "\n".join(lines)[-3500:]
+    for a, b in (("%", "%25"), ("\r", "%0D"), ("\n", "%0A")):
+        msg = msg.replace(a, b)
+    sys.__stdout__.write(f"::error title={report.nodeid} ({report.when})::{msg}\n")
+    sys.__stdout__.flush()

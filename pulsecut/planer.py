@@ -412,7 +412,10 @@ class Planer:
         for z in self.scenes:
             timeline += scene_shots.get(z["id"], [])
         # Einheiten genau füllen: fehlende Einheiten auf Schnitte mit Platz im Clip verteilen
-        distribute_rest(timeline, self.clips, self.units, self.xf)
+        if distribute_rest(timeline, self.clips, self.units, self.xf) > 0:
+            msg = _t("Zu wenig brauchbares Material, um die ganze Musik zu füllen.")
+            if msg not in self.warn:
+                self.warn.append(msg)
         layout(timeline, self.units)
         for s in timeline:
             c = self.clips[s["clip"]]
@@ -444,7 +447,7 @@ def distribute_rest(timeline, clips, units, xf):
     N = len(units) - 1
     rest = N - sum(int(s["k"]) for s in timeline)
     if not timeline or rest <= 0:
-        return
+        return 0
 
     def room(s, add):
         """Passt der Schnitt mit `add` Einheiten mehr (an seiner Stelle) samt seinen Geschwistern in den Clip?"""
@@ -458,7 +461,7 @@ def distribute_rest(timeline, clips, units, xf):
     last = timeline[-1]
     if rest <= max(1, int(last["k"])) and not last.get("lock") and room(last, rest):
         last["k"] = int(last["k"]) + rest
-        return
+        return 0
     guard = 0
     while rest > 0 and guard < 10 * len(timeline) + 10:
         guard += 1
@@ -472,10 +475,9 @@ def distribute_rest(timeline, clips, units, xf):
             rest -= 1
             progress = True
             layout(timeline, units)
-        if not progress:   # kein Clip hat mehr Platz: notfalls der längste Clip
-            s = max(timeline, key=lambda x: clips[x["clip"]].dur - x.get("dur", 0))
-            s["k"] = int(s["k"]) + rest
-            break
+        if not progress:   # kein Clip hat mehr Platz: Das Material ist aufgebraucht. Die harten Regeln gehen vor,
+            break          # der Film wird dann etwas kürzer als die Musik (die Oberfläche weist darauf hin).
+    return rest
 
 
 def repair(timeline, clips, xf):
