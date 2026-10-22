@@ -22,11 +22,20 @@ jobs:
           V=$(sed -n 's/^VERSION = "\(.*\)"/\1/p' pulsecut/__init__.py)
           test "v$V" = "${GITHUB_REF_NAME}" || { echo "Tag ${GITHUB_REF_NAME} does not match VERSION $V"; exit 1; }
       - name: Build
-        run: packaging/ci_build.sh
+        run: |
+          set -o pipefail
+          packaging/ci_build.sh 2>&1 | tee build.log
       - name: Smoke test
         env:
           SMOKE_SCREENSHOT: dist/window.png
-        run: xvfb-run -a -s "-screen 0 1600x1000x24" python3 tests/smoke_appimage.py dist/Pulsecut-*-x86_64.AppImage --gui
+        run: |
+          set -o pipefail
+          xvfb-run -a -s "-screen 0 1600x1000x24" python3 tests/smoke_appimage.py dist/Pulsecut-*-x86_64.AppImage --gui 2>&1 | tee smoke.log
+      - name: Failure details
+        if: failure()
+        run: |
+          tools/ci_tail.sh build.log 80
+          tools/ci_tail.sh smoke.log 80
       - name: Release notes
         run: |
           V="${GITHUB_REF_NAME#v}"

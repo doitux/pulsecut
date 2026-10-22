@@ -44,11 +44,21 @@ jobs:
         env:
           PULSECUT_FUZZ_STEPS: "300"
           PULSECUT_FUZZ_SEEDS: "1,2,3"
-        run: python -m pytest -m "not ui and not ki" -v --durations=15
+        run: |
+          set -o pipefail
+          python -m pytest -m "not ui and not ki" -v --durations=15 2>&1 | tee core.log
       - name: Browser tests (German and English)
         env:
           PULSECUT_SCREENSHOTS: ${{ github.workspace }}/screenshots
-        run: python -m pytest tests/test_ui.py -v
+        run: |
+          set -o pipefail
+          python -m pytest tests/test_ui.py -v 2>&1 | tee ui.log
+      - name: Failure details
+        if: failure()
+        run: |
+          tools/ci_tail.sh core.log 80
+          tools/ci_tail.sh ui.log 80
+          for f in $(ls -t /tmp/pytest-of-*/pytest-*/test_workflow*/server.log 2>/dev/null | head -2); do tools/ci_tail.sh "$f" 40; done
       - name: Screenshots
         if: always()
         uses: actions/upload-artifact@v4
@@ -70,11 +80,20 @@ jobs:
         run: apt-get update && apt-get install -y --no-install-recommends git ca-certificates
       - uses: actions/checkout@v4
       - name: Build
-        run: packaging/ci_build.sh
+        run: |
+          set -o pipefail
+          packaging/ci_build.sh 2>&1 | tee build.log
       - name: Smoke test (server, whole project, export, Qt window)
         env:
           SMOKE_SCREENSHOT: dist/window.png
-        run: xvfb-run -a -s "-screen 0 1600x1000x24" python3 tests/smoke_appimage.py dist/Pulsecut-*-x86_64.AppImage --gui
+        run: |
+          set -o pipefail
+          xvfb-run -a -s "-screen 0 1600x1000x24" python3 tests/smoke_appimage.py dist/Pulsecut-*-x86_64.AppImage --gui 2>&1 | tee smoke.log
+      - name: Failure details
+        if: failure()
+        run: |
+          tools/ci_tail.sh build.log 80
+          tools/ci_tail.sh smoke.log 80
       - uses: actions/upload-artifact@v4
         with:
           name: Pulsecut-AppImage
