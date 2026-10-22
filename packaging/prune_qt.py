@@ -51,6 +51,10 @@ while todo:
             keep.add(p.name)
             todo.append(p.resolve())
 removed = 0
+# xkbcommon vom System nehmen: passt zu dessen Tastatur-/Compose-Dateien (sonst Fehlermeldungen wie „dead_hamza“)
+for f in list(root.glob("libxkbcommon*.so*")) + list((qt / "lib").glob("libxkbcommon*.so*")):
+    removed += f.stat().st_size
+    f.unlink()
 for f in (qt / "lib").iterdir():
     if f.name.startswith("libQt6") and f.name not in keep:
         removed += f.stat().st_size

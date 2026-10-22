@@ -510,8 +510,17 @@ class Handler(BaseHTTPRequestHandler):
             self._json({"ok": False, "fehler": str(e)})
 
 
+class Server(ThreadingHTTPServer):
+    def handle_error(self, request, client_address):
+        """Abgebrochene Verbindungen (der Browser springt beim Abspielen im Video) sind normal – nicht melden."""
+        import sys
+        if isinstance(sys.exc_info()[1], (ConnectionResetError, BrokenPipeError, ConnectionAbortedError)):
+            return
+        super().handle_error(request, client_address)
+
+
 def start_server(port=0):
-    srv = ThreadingHTTPServer(("127.0.0.1", port), Handler)
+    srv = Server(("127.0.0.1", port), Handler)
     srv.daemon_threads = True
     th = threading.Thread(target=srv.serve_forever, daemon=True, name="http")
     th.start()
