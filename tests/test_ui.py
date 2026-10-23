@@ -235,6 +235,12 @@ def test_workflow(app):
         pg.wait_for_selector("#tsh .shot", timeout=120000)
         pg.wait_for_timeout(1000)
         assert len(pg.query_selector_all("#tsh .shot")) > 20
+        big = pg.eval_on_selector("#pcv", "e=>e.getBoundingClientRect().width")
+        pg.click("#pgr button[data-v=klein]")                  # smaller preview, more room below
+        pg.wait_for_timeout(300)
+        assert pg.eval_on_selector("#pcv", "e=>e.getBoundingClientRect().width") < big * 0.6
+        pg.click("#pgr button[data-v=gross]")
+        pg.wait_for_timeout(300)
         pg.click("#pplay")
         pg.wait_for_function("parseFloat(document.querySelector('#tph').style.left) > 0", timeout=90000)
         x1 = pg.eval_on_selector("#tph", "e=>parseFloat(e.style.left)")

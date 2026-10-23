@@ -11,6 +11,7 @@ function T(s, ...v) {
   return v.length ? out.replace(/\{(\d+)\}/g, (_, i) => v[+i]) : out;
 }
 const EN = {
+ "Vorschau": "Preview",
  "➕ Weiteren Clip danach einfügen": "➕ Insert another clip after it",
  "Nicht möglich": "Not possible",
  "Eingefügt und gesperrt 🔒 – dafür ist an anderer Stelle ein Schnitt weggefallen": "Inserted and locked 🔒 – a shot elsewhere was dropped to make room",

@@ -105,6 +105,11 @@ canvas.welle{width:100%;height:70px;display:block;background:#f4f3ef;border-radi
 /* Timeline */
 .tlwrap{display:grid;grid-template-columns:minmax(380px,760px) 1fr;gap:16px;align-items:start}
 @media(max-width:1180px){.tlwrap{grid-template-columns:1fr}}
+.tlwrap.v-mittel{grid-template-columns:minmax(300px,500px) 1fr}
+.tlwrap.v-klein{grid-template-columns:minmax(220px,320px) 1fr}
+@media(max-width:1180px){.tlwrap.v-mittel,.tlwrap.v-klein{grid-template-columns:1fr}
+  .tlwrap.v-mittel>div:first-child{max-width:500px}.tlwrap.v-klein>div:first-child{max-width:320px}}
+.tlwrap.v-klein .transport{flex-wrap:wrap}.tlwrap.v-klein .transport .zeit{min-width:0}
 .player{background:#000;border-radius:10px;overflow:hidden;position:relative}
 .player canvas{width:100%;display:block;aspect-ratio:16/9}
 .transport{display:flex;gap:8px;align-items:center;margin-top:8px}

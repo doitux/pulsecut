@@ -816,7 +816,7 @@ R.timeline = {
   async render(m) {
     m.innerHTML = `<h1>${T("Timeline & Vorschau")}</h1><p class="lead">${T("Spiel den Film ab – der rote Strich zeigt, wo du bist. Klick einen Schnitt an, um ihn anzupassen: Ausschnitt im Clip verschieben (ziehen oder wischen), Länge verdoppeln, andere Stelle, entfernen oder mit Ziehen in der Timeline umsortieren. Was du änderst, wird gesperrt 🔒 und bleibt beim Neuplanen erhalten.")}</p>
       <div class="tlwrap"><div><div class="player"><canvas id="pcv"></canvas></div>
-        <div class="transport"><button id="pplay" class="pri">${T("▶ Abspielen")}</button><button id="pprev" title="${T("vorheriger Schnitt")}">⏮</button><button id="pnext" title="${T("nächster Schnitt")}">⏭</button><span class="zeit" id="pzeit">0:00</span></div></div>
+        <div class="transport"><button id="pplay" class="pri">${T("▶ Abspielen")}</button><button id="pprev" title="${T("vorheriger Schnitt")}">⏮</button><button id="pnext" title="${T("nächster Schnitt")}">⏭</button><span class="zeit" id="pzeit">0:00</span><span style="flex:1"></span><span class="meta">${T("Vorschau")}</span><span id="pgr"></span></div></div>
         <div id="tlinfo"></div></div>
       <div class="tl"><div class="row" style="padding:8px 10px;border-bottom:1px solid var(--line)"><span class="meta">${T("Zoom")}</span><input type="range" id="tzoom" min="4" max="80" step="1">
         <span class="lab" style="margin-left:14px">${T("Originalton")}</span><span id="tton"></span><span style="flex:1"></span>
@@ -825,6 +825,7 @@ R.timeline = {
       <div id="insp"></div>${weiter("export", T("Weiter zum Fertigstellen"))}`;
     bindWeiter(m);
     PLY = new Player($("#pcv"), (t, i) => this.time(t, i));
+    this.groesse(vorschauGroesse());
     $("#pplay").onclick = () => { PLY.toggle(); this.btn(); };
     $("#pprev").onclick = () => { const s = PLY.shots, i = PLY.idxAt(PLY.t - 0.05); PLY.seek(s[Math.max(0, PLY.t - s[i].tl0 > 0.3 ? i : i - 1)].tl0); };
     $("#pnext").onclick = () => { const s = PLY.shots, i = PLY.idxAt(PLY.t); if (i + 1 < s.length) PLY.seek(s[i + 1].tl0); };
@@ -838,6 +839,12 @@ R.timeline = {
     await this.load();
   },
   leave() { if (PLY) PLY.destroy(); PLY = null; document.removeEventListener("keydown", this.key); },
+  groesse(v) {   // Vorschau klein / mittel / groß – kleiner lässt mehr Platz für Timeline und Schnitt-Optionen
+    const w = $(".tlwrap"), el = $("#pgr"); if (!w || !el) return;
+    w.classList.remove("v-klein", "v-mittel", "v-gross"); w.classList.add("v-" + v);
+    el.innerHTML = seg("pgr", [["klein", "S"], ["mittel", "M"], ["gross", "L"]], v);
+    onSeg($('[data-f="pgr"]', el), x => { try { localStorage.setItem("pulsecut.vorschau", x); } catch (e) { /* ohne Speicher */ } this.groesse(x); });
+  },
   btn() { const b = $("#pplay"); if (b) b.textContent = PLY.playing ? T("⏸ Pause") : T("▶ Abspielen"); },
   async load(keepSel = true) {
     const tl = await api("/api/timeline");
@@ -1005,6 +1012,11 @@ function clipWahl(clips) {
     box.querySelector('[data-x="abbr"]').onclick = () => fertig(null);
     box.querySelector('[data-x="auto"]').onclick = () => fertig("");
   });
+}
+
+function vorschauGroesse() {
+  try { const v = localStorage.getItem("pulsecut.vorschau"); if (["klein", "mittel", "gross"].includes(v)) return v; } catch (e) { /* ohne Speicher */ }
+  return "gross";
 }
 
 function tonText(s) {

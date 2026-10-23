@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.0.8 – 2026-10-23
+- Timeline (step 9): the preview can be made smaller (S / M / L next to the play buttons), leaving more room for the
+  timeline and the shot options below. The choice is remembered.
+
 ## 1.0.7 – 2026-10-23
 - Timeline (step 9): **original sound per shot** – Auto / On / Off in the shot inspector, with the reason when a
   shot has no original sound (music in the video, nothing atmospheric, switched off for the clip …). “On” also works
