@@ -338,6 +338,39 @@ def test_workflow(app):
         ids6 = [s_["id"] for s_ in tl6["shots"]]
         assert ids6.index(r_["id"]) == ids6.index(anchor["id"]) + 1
         assert tl6["differenz"] == 0 and not [p for p in tl6["probleme"] if p["art"] in ("ueberlappung", "rand")]
+        # remove with the Del key: choice dialog, the shots behind move up, everything before is finished
+        tl7 = pg.evaluate("fetch('/api/timeline').then(r=>r.json())")
+        victim = tl7["shots"][len(tl7["shots"]) // 2]
+        nxt = tl7["shots"][len(tl7["shots"]) // 2 + 1]
+        pg.evaluate("id=>document.querySelector(`.shot[data-id='${id}']`).scrollIntoView()", victim["id"])
+        pg.click(f".shot[data-id='{victim['id']}']")
+        pg.wait_for_selector("#iweg")
+        pg.wait_for_timeout(300)
+        pg.keyboard.press("Delete")
+        pg.wait_for_selector(".entfwahl button")
+        snap("12_entfernen")
+        with pg.expect_response(lambda r: "/api/shot/entfernen" in r.url) as resp:
+            pg.click(".entfwahl button[data-v=nachbar]")
+        assert resp.value.json()["ok"]
+        pg.wait_for_timeout(1500)
+        tl8 = pg.evaluate("fetch('/api/timeline').then(r=>r.json())")
+        ids8 = [s_["id"] for s_ in tl8["shots"]]
+        assert victim["id"] not in ids8 and ids8[len(tl7["shots"]) // 2] == nxt["id"]
+        assert tl8["fertig_bis"] == tl7["shots"][len(tl7["shots"]) // 2 - 1]["id"]
+        assert tl8["differenz"] == 0 and not [p for p in tl8["probleme"] if p["art"] in ("ueberlappung", "rand")]
+        pg.wait_for_selector("#tfix:not(.leer)")
+        assert pg.is_visible(f".shot.fertig[data-id='{ids8[0]}']")
+        # film shorter, then undo
+        pg.keyboard.press("Delete")
+        pg.wait_for_selector(".entfwahl button[data-v=kuerzer]")
+        with pg.expect_response(lambda r: "/api/shot/entfernen" in r.url):
+            pg.click(".entfwahl button[data-v=kuerzer]")
+        pg.wait_for_selector("#endezur")
+        with pg.expect_response(lambda r: "/api/ende/zuruecknehmen" in r.url):
+            pg.click("#endezur")
+        pg.wait_for_timeout(1200)
+        tl9 = pg.evaluate("fetch('/api/timeline').then(r=>r.json())")
+        assert tl9["ende_weg"] == 0 and tl9["differenz"] == 0
         # playback across cuts into other video files: no still-image fallback once it runs
         pg.evaluate("""() => { const P = PLY; P._fb = 0; const o = P.img.bind(P);
             P.img = u => { if (u && !u.includes('titel') && P.playing && P.t > 1.2) P._fb++; return o(u); }; }""")

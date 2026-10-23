@@ -133,17 +133,7 @@ def videos_info(pr):
 
 def anteile(pr):
     """Voraussichtliche Sekunden je Stichwort mit den aktuellen Gewichten (schnelle Vorschau der Zuteilung)."""
-    try:
-        p = pr.make_planer()
-    except RuntimeError:
-        return {}
-    lock = {}
-    alloc = p.allocate(p.N, lock)
-    L = p.L_of(p.k)
-    out = {}
-    for z in pr.scenes:
-        out[z["kw"]] = out.get(z["kw"], 0.0) + alloc.get(z["id"], 0) * L
-    return {k: round(v, 1) for k, v in out.items()}
+    return {k: round(v, 1) for k, v in pr.anteile_soll().items()}
 
 
 def api_get(path, q):
@@ -181,6 +171,8 @@ def api_get(path, q):
         return {"name": c.name, "dauer": c.dur, "hoch": c.portrait, "aspect": c.aspect,
                 "bilder": [[f[0], f"/bild/{c.hash}/{f[1]}"] for f in c.ana.get("ki_frames", [])],
                 "aus": [list(x) for x in c.excl], "proxy": f"/media/proxy/{c.hash}.webm"}
+    if path == "/api/entfernen":
+        return pr.entfernen_optionen(q.get("id", [""])[0])
     if path == "/api/szenenclips":
         return pr.szenen_clips(q.get("id", [""])[0])
     if path == "/api/bereich":
@@ -250,6 +242,7 @@ def api_post(path, b, raw=None, ctype=""):
             pr.d["ziel_dauer"] = float(z) if z not in (None, "", 0, "0") else None
         if "kuerzen" in b:
             pr.d["kuerzen"] = {k: v for k, v in b["kuerzen"].items() if v in ("vorne", "hinten")}
+        pr.d["ende_weg"] = 0     # neue Längen-Einstellung: das Kürzen aus der Timeline gilt nicht mehr
         with pr.lock:
             pr.update_layout()
         pr.save()
@@ -393,7 +386,7 @@ def api_post(path, b, raw=None, ctype=""):
         if op == "anders":
             return pr.shot_anders(sid)
         if op == "entfernen":
-            return pr.shot_entfernen(sid, bool(b.get("stelle_sperren", True)))
+            return pr.shot_entfernen(sid, bool(b.get("stelle_sperren", True)), b.get("ausgleich", "rest"))
         if op == "sperren":
             return pr.shot_sperren(sid, bool(b.get("lock")))
         if op == "ton":
@@ -403,6 +396,14 @@ def api_post(path, b, raw=None, ctype=""):
         raise KeyError(path)
     if path == "/api/auffuellen":
         return pr.auffuellen()
+    if path == "/api/fertig":
+        return pr.fertig_setzen(b.get("id"))
+    if path == "/api/anteile/ok":
+        return pr.anteile_ok()
+    if path == "/api/anteile/ausgleichen":
+        return pr.anteile_ausgleichen()
+    if path == "/api/ende/zuruecknehmen":
+        return pr.ende_zuruecknehmen()
     if path == "/api/export":
         fm = [f for f in b.get("formate", []) if f in EX.FORMATE]
         pr.start_job("export", pr.export_job, fm, bool(b.get("kdenlive", True)))

@@ -235,8 +235,9 @@ class MusikLayout:
     """Ordnet die Stücke auf der Zeitachse an (direkt hintereinander oder mit Überblendung), kürzt auf Wunsch
     einzelne Stücke vorne oder hinten (immer an einem Taktanfang) und liefert das Schnittraster."""
 
-    def __init__(self, tracks, uebergang="direkt", blende=2.0, ziel=None, kuerzen=None, raster="takt"):
+    def __init__(self, tracks, uebergang="direkt", blende=2.0, ziel=None, kuerzen=None, raster="takt", ende_weg=0):
         self.tracks = tracks
+        self.ende_weg = max(0, int(ende_weg or 0))   # so viele Raster-Einheiten am Filmende weglassen (Timeline)
         self.xf = float(blende) if uebergang == "blende" else 0.0
         self.ziel = float(ziel) if ziel else None
         self.kuerzen = dict(kuerzen or {})
@@ -314,6 +315,30 @@ class MusikLayout:
                      "auto_gekuerzt": auto, "gekuerzt": {str(i): round(c, 1) for i, c in cut.items() if c > 0.5},
                      "modi": {str(i): m for i, m in modes.items()},
                      "rest": round(max(0.0, need - sum(cut.values())), 1)}
+        self.ende_gekuerzt = 0
+        if self.ende_weg and len(self.units) - 1 > self.ende_weg + 4:
+            self._ende_kuerzen(self.ende_weg)
+
+    def _ende_kuerzen(self, n):
+        """„Film kürzer“ aus der Timeline: am Ende genau n Raster-Einheiten weg – Schluss an einem Taktanfang, die Musik
+        blendet dort aus. Alles davor bleibt auf die Hundertstelsekunde gleich."""
+        N = len(self.units) - 1
+        e = self.units[N - n]
+        segs = [sg for sg in self.segments if sg["tl_start"] < e - 1.0] or self.segments[:1]
+        last = segs[-1]
+        last["src_out"] = last["src_in"] + (e - last["tl_start"]) + 0.3
+        last["fade_out"] = 3.3
+        last["ende_gekuerzt"] = True
+        self.segments = segs
+        self.D = last["tl_start"] + last["src_out"] - last["src_in"]
+        self.switches = [sg["tl_start"] + (self.xf / 2 if self.xf else 0.0) for sg in segs[1:]]
+        old = list(self.units)
+        self._grid()
+        if len(self.units) - 1 != N - n:   # sicherheitshalber genau das alte Raster (bis zum neuen Ende) behalten
+            self.units = old[:N - n] + [self.D]
+        self.ende_gekuerzt = n
+        self.info["dauer"] = round(self.D, 2)
+        self.info["ende_weg"] = n
 
     def _grid(self):
         D = self.D

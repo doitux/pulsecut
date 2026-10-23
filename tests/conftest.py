@@ -58,6 +58,11 @@ def prepare(pr, beschreibung=None, ziel=None, **schnitt):
     pr.d["abgelehnt"] = []
     pr.d["szenen"] = {}
     pr.d["szenen_folge"] = None
+    pr.d["fertig_bis"] = None
+    pr.d["ende_weg"] = 0
+    pr.d["ende_auto"] = False
+    pr.update_layout()
+    pr.d["anteile_basis"] = None
     pr.d["schnitt"].update({"k": 0, "raster": "takt", "uebergang": "hart", "blende": 0.5, "bewegung": False,
                             "originalton": "auto", "absenken": 5,
                             "titelstil": {"stil": "band", "schrift": "", "farbe": "#ffc23d", "position": "unten"}})

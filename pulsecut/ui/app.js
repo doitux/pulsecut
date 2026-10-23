@@ -834,7 +834,8 @@ R.timeline = {
     $("#tfill").onclick = async () => { await api("/api/auffuellen", {}); await this.load(); };
     $("#tzoom").oninput = e => { pps = +e.target.value; this.drawTL(); };
     $("#tli").addEventListener("mousedown", e => { if (e.target.closest(".shot")) return; const r = $("#tli").getBoundingClientRect(); PLY.seek((e.clientX - r.left) / pps); });
-    this.key = e => { if (step !== "timeline" || e.target.matches("input,textarea,select")) return; if (e.code === "Space") { e.preventDefault(); PLY.toggle(); this.btn(); } if (e.code === "ArrowRight") $("#pnext").click(); if (e.code === "ArrowLeft") $("#pprev").click(); };
+    this.key = e => { if (step !== "timeline" || e.target.matches("input,textarea,select")) return; if (e.code === "Space") { e.preventDefault(); PLY.toggle(); this.btn(); } if (e.code === "ArrowRight") $("#pnext").click(); if (e.code === "ArrowLeft") $("#pprev").click();
+      if ((e.code === "Delete" || e.code === "Backspace") && SEL && $("#modal").hidden) { e.preventDefault(); this.entfernen(SEL); } };
     document.addEventListener("keydown", this.key);
     await this.load();
   },
@@ -866,6 +867,41 @@ R.timeline = {
       await this.load(); toast(w === "aus" ? T("Nur Musik – der Originalton bleibt überall stumm") : T("Originalton an stimmungsvollen Stellen dazu"));
     });
   },
+  async entfernen(id) {
+    const s = TL.shots.find(x => x.id === id); if (!s) return;
+    const o = await api("/api/entfernen?id=" + id);
+    let art = merkEntfernen();
+    if (!art || !o[art] || !o[art].ok) { art = await entfernenWahl(o); if (!art) return; }
+    const r = await api("/api/shot/entfernen", {id, ausgleich: art});
+    const i = TL.shots.findIndex(x => x.id === id);
+    SEL = null; await this.load();
+    const nach = TL.shots[i]; if (nach) { SEL = nach.id; this.drawTL(); this.inspect(nach.id); PLY.seek(nach.tl0 + 0.02); }
+    toast(art === "kuerzer" ? T("Entfernt – der Film ist entsprechend kürzer, die Musik blendet am Ende aus")
+      : art === "nachbar" ? T("Entfernt – die Schnitte dahinter sind nachgerückt, der nächste ist länger")
+      : T("Entfernt – die Schnitte dahinter sind nachgerückt, die Takte sind auf die Kategorien dahinter verteilt"), 5000);
+    return r;
+  },
+  marker() {
+    const old = $("#tfix"); if (old) old.remove();
+    const m = TL.shots.find(x => x.id === TL.fertig_bis);
+    const li = $("#tli"); if (!li) return;
+    const d = document.createElement("div"); d.id = "tfix"; d.className = "fertiglinie" + (m ? "" : " leer");
+    const x0 = m ? m.tl1 * pps : 0; d.style.left = x0 + "px";
+    d.innerHTML = `<span>${m ? T("✓ fertig bis hier") : T("✓ ziehen: fertig bis …")}</span>`;
+    d.title = T("Alles links davon ist fertig: Auffüllen, Ausgleichen und Neuplanen ändern dort nichts mehr. Zum Verschieben ziehen.");
+    li.appendChild(d);
+    d.onmousedown = e => {
+      e.preventDefault(); e.stopPropagation(); const r = li.getBoundingClientRect();
+      const mv = ev => { d.style.left = Math.max(0, ev.clientX - r.left) + "px"; };
+      const up = async ev => {
+        document.removeEventListener("mousemove", mv); document.removeEventListener("mouseup", up);
+        const t = (ev.clientX - r.left) / pps;
+        let best = null; for (const s of TL.shots) if (!best || Math.abs(s.tl1 - t) < Math.abs(best.tl1 - t)) best = s;
+        await api("/api/fertig", {id: t < 0.5 || !best ? null : best.id}); await this.load();
+      };
+      document.addEventListener("mousemove", mv); document.addEventListener("mouseup", up);
+    };
+  },
   async replan(keep) { await api("/api/plan", {behalten: keep}); await this.load(); toast(T("Neu geplant")); },
   info() {
     const t = TL, n = t.shots.length, locked = t.shots.filter(s => s.lock).length;
@@ -876,7 +912,17 @@ R.timeline = {
       ${pr.length ? `<div class="fehler">${pr.map(p => esc(p.text)).join("<br>")}</div>` : ""}
       ${ch.length ? `<div class="meta">${T`${ch.length}× von der Zeitfolge abweichend (von dir so gewollt oder durch die Kamerabewegungs-Option).`}</div>` : ""}
       ${(t.warnungen || []).map(w => `<div class="hinweis">${esc(w)}</div>`).join("")}
-      <div class="meta" style="margin-top:6px">${T("Tasten: Leertaste = Abspielen/Pause, ←/→ = Schnitt zurück/vor.")}</div></div>`;
+      ${t.abweichungen && t.abweichungen.length ? `<div class="hinweis" id="tabw"><b>${T("Die Anteile haben sich gegenüber der Planung verschoben:")}</b> ${t.abweichungen.map(d => T`${esc(d.name)} ${d.ist} % statt ${d.soll} %`).join(" · ")}
+        <div class="row" style="margin-top:6px"><button id="abwok">${T("So lassen")}</button><button id="abwaus">${T("Hinter „fertig bis hier“ ausgleichen")}</button><button id="abwgw">${T("Gewichtung ändern")}</button></div></div>` : ""}
+      ${t.ende_weg ? `<div class="meta" style="margin-top:6px">${t.ende_auto ? T`Die Musik endet ${t.ende_weg} Takte früher (mit Ausblendung) – für die ganze Musik ist nicht genug Material frei.` : T`Die Musik endet ${t.ende_weg} Takte früher (mit Ausblendung).`} <button id="endezur">${T("Zurücknehmen")}</button></div>` : ""}
+      ${merkEntfernen() ? `<div class="meta" style="margin-top:6px">${T`Beim Entfernen: ${ENTF_NAME()[merkEntfernen()]}`} · <a href="#" id="entfwieder">${T("wieder fragen")}</a></div>` : ""}
+      <div class="meta" style="margin-top:6px">${T("Tasten: Leertaste = Abspielen/Pause, ←/→ = Schnitt zurück/vor, Entf = ausgewählten Schnitt entfernen.")}</div></div>`;
+    const b = (id, fn) => { const e = $("#" + id); if (e) e.onclick = fn; };
+    b("abwok", async () => { await api("/api/anteile/ok", {}); await this.load(); });
+    b("abwaus", async () => { const r = await api("/api/anteile/ausgleichen", {}); await this.load(); toast(r.verbessert ? T("Ausgeglichen") : T("Ausgleichen war nicht möglich – hinter „fertig bis hier“ ist für die fehlenden Kategorien kein Material mehr frei."), 6000); });
+    b("abwgw", () => go("gewichtung"));
+    b("endezur", async () => { await api("/api/ende/zuruecknehmen", {}); await this.load(); });
+    b("entfwieder", e => { e.preventDefault(); try { localStorage.removeItem("pulsecut.entfernen"); } catch (x) { /* ohne Speicher */ } this.info(); });
   },
   drawTL() {
     const t = TL, W = Math.ceil(t.dauer * pps) + 40;
@@ -887,7 +933,7 @@ R.timeline = {
     const sh = $("#tsh"); sh.style.width = W + "px"; sh.innerHTML = "";
     t.shots.forEach((s, i) => {
       const d = document.createElement("div");
-      d.className = "shot" + (s.id === SEL ? " sel" : "") + (s.problem ? " problem" : "") + (s.ueber ? " ueber" : "");
+      d.className = "shot" + (s.id === SEL ? " sel" : "") + (s.problem ? " problem" : "") + (s.ueber ? " ueber" : "") + (s.fertig ? " fertig" : "");
       d.style.left = s.tl0 * pps + "px"; d.style.width = Math.max(3, (s.tl1 - s.tl0) * pps - 2) + "px";
       d.style.borderTopColor = s.farbe; d.style.backgroundImage = s.bild ? `url(${s.bild})` : "";
       d.title = `${fmt1(s.tl0)} · ${s.name} · ${T`${s.clip} ab ${komma(s.src.toFixed(1))} s`} · ${s.bewegung_text}`;
@@ -902,6 +948,7 @@ R.timeline = {
       g.strokeStyle = "#0004"; for (const u of L.units) { const x = Math.round(u * pps) + .5; g.beginPath(); g.moveTo(x, 40); g.lineTo(x, 56); g.stroke(); }
       g.strokeStyle = "#000"; g.lineWidth = 2; for (const w of L.wechsel) { g.beginPath(); g.moveTo(w * pps, 0); g.lineTo(w * pps, 56); g.stroke(); }
       g.fillStyle = "#333"; g.font = "11px sans-serif"; for (const s of L.segmente) g.fillText("♪ " + s.titel, s.tl_start * pps + 4, 12); }
+    this.marker();
     this.time(PLY.t);
   },
   time(t, i) {
@@ -943,7 +990,7 @@ R.timeline = {
       <div class="row" style="margin-top:10px"><span class="lab">${T("Länge")}</span>${[1, 2, 3].map(f => `<button data-k="${k0 * f}" class="${s.k === k0 * f ? "pri" : ""}">${f}× (${komma((k0 * f * ul).toFixed(1))} s)</button>`).join("")}<button data-k="${s.k - 1}" ${s.k <= 1 ? "disabled" : ""}>− 1</button><button data-k="${s.k + 1}">+ 1</button>
         <span class="lab" style="margin-left:12px">${T("Reihenfolge")}</span><button data-mv="-1">${T("◀ früher")}</button><button data-mv="1">${T("später ▶")}</button></div>
       <div class="row" style="margin-top:10px"><span class="lab">${T("Originalton")}</span>${seg("iton", [["", T("Auto")], ["an", T("An")], ["aus", T("Aus")]], s.ton || "")}<span class="meta" id="itoninfo">${esc(tonText(s))}</span></div>
-      <div class="row" style="margin-top:8px"><button id="ianders">${T("Andere Stelle vorschlagen")}</button><button id="iweg">${T("Entfernen")}</button><button id="iplus">${T("➕ Weiteren Clip danach einfügen")}</button><button id="ilock">${s.lock ? T("🔓 Entsperren (Automatik darf wieder)") : T("🔒 Sperren")}</button><button id="iclip">${T("Ganzen Clip ansehen")}</button></div></div>`;
+      <div class="row" style="margin-top:8px"><button id="ianders">${T("Andere Stelle vorschlagen")}</button><button id="iweg" title="${T("Taste Entf")}">${T("Entfernen")}</button><button id="ifertig">${T("✓ Bis hier fertig")}</button><button id="iplus">${T("➕ Weiteren Clip danach einfügen")}</button><button id="ilock">${s.lock ? T("🔓 Entsperren (Automatik darf wieder)") : T("🔒 Sperren")}</button><button id="iclip">${T("Ganzen Clip ansehen")}</button></div></div>`;
     const fs = $("#fs"), W = fs.clientWidth, D = cb.dauer, sc = W / D;
     const nimg = Math.max(4, Math.floor(W / 82)), imgs = cb.bilder;
     $(".bilder", fs).innerHTML = imgs.length ? Array.from({length: nimg}, (_, j) => `<img src="${imgs[Math.min(imgs.length - 1, Math.floor((j + .5) / nimg * imgs.length))][1]}">`).join("") : "";
@@ -982,7 +1029,8 @@ R.timeline = {
     });
     $$("button[data-mv]", box).forEach(b => b.onclick = async () => { const i = TL.shots.findIndex(x => x.id === s.id); await api("/api/shot/verschieben", {id: s.id, index: i + +b.dataset.mv}); await this.load(); });
     $("#ianders").onclick = async () => { const r = await api("/api/shot/anders", {id: s.id}); if (!r.ok) toast(r.fehler); await this.load(); };
-    $("#iweg").onclick = async () => { await api("/api/shot/entfernen", {id: s.id}); SEL = null; await this.load(); toast(T("Entfernt – die Lücke wurde mit einem anderen Schnitt gefüllt")); };
+    $("#iweg").onclick = () => this.entfernen(s.id);
+    $("#ifertig").onclick = async () => { await api("/api/fertig", {id: s.id}); await this.load(); toast(T("Alles bis hier ist fertig ✓")); };
     $("#ilock").onclick = async () => { await api("/api/shot/sperren", {id: s.id, lock: !s.lock}); await this.load(); };
     $("#iclip").onclick = () => vorschauClip(s.clip, s.src);
     $("#iplus").onclick = async () => {
@@ -1011,6 +1059,30 @@ function clipWahl(clips) {
     box.querySelectorAll("[data-clip]").forEach(b => b.onclick = () => fertig(b.dataset.clip));
     box.querySelector('[data-x="abbr"]').onclick = () => fertig(null);
     box.querySelector('[data-x="auto"]').onclick = () => fertig("");
+  });
+}
+
+const ENTF_NAME = () => ({rest: T("Rest des Films ausgleichen"), nachbar: T("Nachbarn länger"), kuerzer: T("Film kürzer")});
+function merkEntfernen() { try { const v = localStorage.getItem("pulsecut.entfernen"); return ["rest", "nachbar", "kuerzer"].includes(v) ? v : ""; } catch (e) { return ""; } }
+function entfernenWahl(o) {
+  const n = ENTF_NAME();
+  const neu = (o.rest.log || []).filter(x => x.art === "neu").map(x => x.kw), lg = (o.rest.log || []).find(x => x.art === "laenger");
+  const was = [neu.length ? T`neue Schnitte: ${[...new Set(neu)].join(", ")}` : "", lg ? T`${lg.n} Takte auf Schnitte dahinter` : ""].filter(Boolean).join(" · ");
+  const opt = [
+    ["rest", n.rest, T("Die freien Takte gehen an die Kategorien hinter dieser Stelle, nach deiner Gewichtung – chronologisch eingereiht, nie aus einer früheren Szene.") + (was ? ` <i>(${esc(was)})</i>` : ""), o.rest.ok ? "" : T("Hinter dieser Stelle ist nicht genug Material frei.")],
+    ["nachbar", n.nachbar, T("Der folgende Schnitt wird um diese Takte länger (z. B. doppelt so lang), alles andere bleibt."), o.nachbar.ok ? "" : T("Die Clips dahinter reichen nicht für längere Schnitte.")],
+    ["kuerzer", n.kuerzer, T`Der Film wird ${komma(o.sekunden)} s kürzer: Die Musik endet ${o.takte} Takte früher, mit Ausblendung am Taktanfang.`, o.kuerzer.ok ? "" : T("Der Film ist dafür zu kurz.")],
+  ];
+  return new Promise(res => {
+    const m = $("#modal"), box = $("#mbox");
+    box.innerHTML = `<p><b>${T("Schnitt entfernen")}</b><br><span class="meta">${T("Die Schnitte dahinter rücken nach, alles davor gilt als fertig. Wohin mit den freien Takten?")}</span></p>
+      <div class="entfwahl">${opt.map(([v, t, d, nein]) => `<button data-v="${v}" ${nein ? "disabled" : ""}><b>${t}</b><span>${d}</span>${nein ? `<span class="nein">${nein}</span>` : ""}</button>`).join("")}</div>
+      <label class="meta"><input type="checkbox" id="entfmerk"> ${T("Immer so – nicht mehr fragen")}</label>
+      <div class="weiter"><button data-x="abbr">${T("Abbrechen")}</button></div>`;
+    m.hidden = false;
+    const fertig = v => { m.hidden = true; if (v && $("#entfmerk").checked) { try { localStorage.setItem("pulsecut.entfernen", v); } catch (e) { /* ohne Speicher */ } } res(v); };
+    box.querySelectorAll(".entfwahl button").forEach(b => b.onclick = () => fertig(b.dataset.v));
+    box.querySelector('[data-x="abbr"]').onclick = () => fertig(null);
   });
 }
 

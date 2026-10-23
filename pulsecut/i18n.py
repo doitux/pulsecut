@@ -174,6 +174,7 @@ EN = {
     "KI-Worker abgebrochen: ": "AI worker stopped: ",
     "In diesem Clip ist keine freie Stelle mehr.": "There is no free passage left in this clip.",
     "In dieser Szene ist keine freie Stelle mehr.": "There is no free passage left in this scene.",
+    "Kein Platz: Alle anderen Schnitte sind gesperrt.": "No room: all other shots are locked.",
     # hwdec.py
     "VAAPI-Treiber fehlt (Paket intel-media-va-driver oder i965-va-driver)":
         "VAAPI driver missing (package intel-media-va-driver or i965-va-driver)",

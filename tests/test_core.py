@@ -168,3 +168,121 @@ def test_insert_another_clip_of_the_scene(projekt):
     # automatic choice within the scene
     r2 = projekt.shot_einfuegen(sh["id"])
     assert r2["ok"] or r2.get("fehler")
+
+
+def _ids(pr):
+    tl, _ = pr.relayout()
+    return [s["id"] for s in tl], tl
+
+
+def test_delete_moves_up_and_distributes(projekt):
+    """Deleting in step 9: the shots behind move up, nothing similar from the same clip takes the place, everything
+    before the deleted shot counts as finished and stays exactly as it was."""
+    prepare(projekt)
+    ids, tl = _ids(projekt)
+    i = len(tl) // 3
+    sh = dict(tl[i])
+    before = [(s["id"], s["clip"], s["src"], s["k"]) for s in tl[:i]]
+    opts = projekt.entfernen_optionen(sh["id"])
+    assert set(opts) >= {"rest", "nachbar", "kuerzer"} and opts["kuerzer"]["ok"]
+    assert _ids(projekt)[0] == ids                                   # asking changes nothing
+    r = projekt.shot_entfernen(sh["id"], ausgleich="rest")
+    assert r["ok"]
+    ids2, tl2 = _ids(projekt)
+    assert sh["id"] not in ids2
+    assert [(s["id"], s["clip"], s["src"], s["k"]) for s in tl2[:i]] == before
+    assert projekt.d["fertig_bis"] == tl2[i - 1]["id"]
+    assert tl2[i]["id"] == ids[i + 1]                                # the next one moved up
+    a, b = sh["src"], sh["src"] + sh["dur"]
+    assert not any(s["clip"] == sh["clip"] and s["src"] < b + 0.1 and s["src"] + s["dur"] > a - 0.1 for s in tl2)
+    assert problems(projekt) == ([], 0)
+    # re-planning and filling keep the finished part
+    projekt.plan(keep_locked=True)
+    projekt.auffuellen()
+    assert [(s["id"], s["clip"], s["src"], s["k"]) for s in _ids(projekt)[1][:i]] == before
+    assert problems(projekt) == ([], 0)
+
+
+def test_delete_neighbour_longer_and_film_shorter(projekt):
+    prepare(projekt)
+    ids, tl = _ids(projekt)
+    i = len(tl) // 2
+    sh, nxt = dict(tl[i]), dict(tl[i + 1])
+    after_k = sum(int(s["k"]) for s in tl[i + 1:])
+    n_before = len(tl)
+    r = projekt.shot_entfernen(sh["id"], ausgleich="nachbar")
+    assert r["ok"]
+    tl2 = _ids(projekt)[1]
+    grown = sum(int(s["k"]) for s in tl2[i:]) - after_k
+    assert grown == int(sh["k"])                                     # the freed bars went to the shots behind it
+    assert next(s for s in tl2 if s["id"] == nxt["id"])["k"] > nxt["k"]
+    assert len(tl2) == n_before - 1 and problems(projekt) == ([], 0)
+    # film shorter: the music ends that many bars earlier, everything else stays
+    N = len(projekt.layout.units) - 1
+    ids3, tl3 = _ids(projekt)
+    sh3 = dict(tl3[i + 2])
+    keep = [(s["id"], round(s["src"], 1), s["k"]) for s in tl3 if s["id"] != sh3["id"]]
+    projekt.shot_entfernen(sh3["id"], ausgleich="kuerzer")
+    assert len(projekt.layout.units) - 1 == N - int(sh3["k"])
+    assert [(s["id"], round(s["src"], 1), s["k"]) for s in _ids(projekt)[1]][:-1] == keep[:-1]   # (last one ends 0.3 s later)
+    assert problems(projekt) == ([], 0) and projekt.timeline_info()["ende_weg"] == int(sh3["k"])
+    projekt.ende_zuruecknehmen()
+    assert len(projekt.layout.units) - 1 == N and problems(projekt) == ([], 0)
+
+
+def test_finished_marker_and_shares(projekt):
+    prepare(projekt)
+    ids, tl = _ids(projekt)
+    tl = [dict(s) for s in tl]
+    projekt.shot_ton(tl[5]["id"], "aus")
+    assert projekt.d["fertig_bis"] == tl[5]["id"]
+    projekt.shot_ton(tl[2]["id"], "aus")                             # never moves back by itself
+    assert projekt.d["fertig_bis"] == tl[5]["id"]
+    assert projekt.fertig_setzen(tl[1]["id"])["fertig_bis"] == tl[1]["id"]
+    assert [s["fertig"] for s in projekt.timeline_info()["shots"][:3]] == [True, True, False]
+    projekt.fertig_setzen(None)
+    assert projekt.timeline_info()["fertig_bis"] is None
+    # deleting many shots of one keyword shifts the shares → a notice, which can be accepted or balanced
+    assert projekt.timeline_info()["abweichungen"] == []
+    zkw = {z["id"]: z["kw"] for z in projekt.scenes}
+    kw = max(set(zkw.values()), key=lambda k: sum(1 for s in tl if zkw.get(s.get("szene")) == k))
+    for s in [s for s in tl if zkw.get(s.get("szene")) == kw][:4]:
+        projekt.shot_entfernen(s["id"], ausgleich="rest")
+    dev = projekt.timeline_info()["abweichungen"]
+    assert dev and any(d["kw"] == kw and d["diff"] < 0 for d in dev)
+    projekt.fertig_setzen(None)
+    r = projekt.anteile_ausgleichen()
+    dev2 = projekt.timeline_info()["abweichungen"]
+    if r["verbessert"]:
+        assert sum(abs(d["diff"]) for d in dev2) < sum(abs(d["diff"]) for d in dev)
+    else:                    # (the synthetic footage of that keyword may be used up)
+        assert sum(abs(d["diff"]) for d in dev2) <= sum(abs(d["diff"]) for d in dev) + 1
+    assert problems(projekt) == ([], 0)
+    projekt.anteile_ok()
+    assert projekt.timeline_info()["abweichungen"] == []
+    assert problems(projekt) == ([], 0)
+
+
+def test_balance_shares_moves_shots(projekt):
+    """„Ausgleichen“: shots of an over-represented keyword are swapped for shots of an under-represented one."""
+    prepare(projekt)
+    tl = projekt.relayout()[0]
+    ist = projekt.anteile_ist(tl)
+    zkw = {z["id"]: z["kw"] for z in projekt.scenes}
+    k = int(projekt.d["schnitt"].get("k") or 0) or projekt.k_default()
+    proto = {"id": "neu", "clip": "", "src": 0.0, "dur": projekt.layout.unit_len() * k, "k": k}
+    frei = [z["kw"] for z in projekt.scenes
+            if PL.best_free_window(tl, proto, z["clips"], projekt.xf(), slack=projekt._slack(proto))]
+    a = frei[0]
+    b = max((kw for kw in ist if kw != a), key=lambda kw: ist[kw])
+    basis = dict(ist)
+    basis[a] += 40.0
+    basis[b] -= 40.0
+    projekt.d["anteile_basis"] = basis
+    dev = projekt.timeline_info()["abweichungen"]
+    assert {d["kw"] for d in dev} >= {a, b}
+    r = projekt.anteile_ausgleichen()
+    assert r["verbessert"]
+    ist2 = projekt.anteile_ist(projekt.relayout()[0])
+    assert ist2[a] > ist[a] and ist2[b] < ist[b]
+    assert problems(projekt) == ([], 0)

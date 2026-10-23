@@ -1,5 +1,22 @@
 # Changelog
 
+## 1.0.9 – 2026-10-24
+- Timeline: **removing a shot no longer brings in a replacement from the same scene.** The shots behind it move up,
+  and you choose where the free bars go: *balance the rest of the film* (new shots for the categories after this
+  point, following the weighting, in chronological order, never from an earlier scene), *longer neighbours* (the next
+  shot gets the bars, e.g. twice as long) or *shorter film* (the music ends that many bars earlier with a fade-out;
+  can be undone). Options that are not possible are greyed out with the reason. The choice can be remembered.
+- The removed passage and the same camera view a few seconds around it are no longer chosen automatically.
+- **Del key** removes the selected shot.
+- **“Finished up to here”**: a green line in the timeline. Everything before it is left alone by filling, balancing
+  and re-planning. It moves along automatically with every edit (never backwards by itself), can be dragged, or set
+  with “✓ Finished up to here” on a shot.
+- **Notice when the shares shift**: if a category ends up noticeably above or below the plan (more than 1½ shots or
+  3 percentage points), the timeline says so – *keep it like this*, *balance after “finished up to here”* or *change
+  the weighting*.
+- If there is no footage left anywhere for all of the music, the music now ends earlier with a fade-out instead of
+  leaving the film shorter than the music.
+
 ## 1.0.8 – 2026-10-23
 - Timeline (step 9): the preview can be made smaller (S / M / L next to the play buttons), leaving more room for the
   timeline and the shot options below. The choice is remembered.

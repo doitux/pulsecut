@@ -42,3 +42,18 @@ def test_layout_shortening(projekt):
     assert abs(short.D - target) < 4
     assert len(short.units) > 10
     assert all(b > a for a, b in zip(short.units, short.units[1:]))
+
+
+def test_end_trim_from_the_timeline(projekt):
+    """„Film kürzer“: exactly n bars less at the end, everything before unchanged, the music fades out."""
+    import numpy as np
+    from pulsecut.musik import MusikLayout
+    tr = projekt.active_tracks()
+    a = MusikLayout(tr)
+    for n in (1, 2, 5):
+        b = MusikLayout(tr, ende_weg=n)
+        N = len(a.units) - 1
+        assert len(b.units) - 1 == N - n
+        assert np.allclose(a.units[:N - n], b.units[:N - n], atol=0.01)
+        assert b.D < a.D and b.segments[-1]["fade_out"] >= 3.0
+        assert b.info["ende_weg"] == n

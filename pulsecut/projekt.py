@@ -1,4 +1,5 @@
 """Projekt: Zustand, Persistenz, Hintergrundaufgaben und alle Arbeitsschritte des Assistenten."""
+import copy
 import json
 import os
 import shutil
@@ -387,7 +388,7 @@ class Projekt:
         idx = {t["datei"]: i for i, t in enumerate(tr)}
         kz = {idx[n]: m for n, m in (self.d.get("kuerzen") or {}).items() if n in idx}
         self.layout = MusikLayout(tr, mu.get("art", "direkt"), mu.get("dauer", 2.0), self.d.get("ziel_dauer"), kz,
-                                  self.d["schnitt"].get("raster", "takt"))
+                                  self.d["schnitt"].get("raster", "takt"), self.d.get("ende_weg", 0))
         return self.layout
 
     def music_mix_file(self):
@@ -846,11 +847,22 @@ class Projekt:
             self.update_layout()
             p = self.make_planer()
             old, _ = self.relayout()
-            locked = [s for s in old if s.get("lock") or alle_sperren] if keep_locked else []
-            tl = p.plan(locked)
+            if keep_locked and self.fix_index(old) >= 0 and not alle_sperren:
+                # fertiger Teil bleibt genau so; dahinter neu verteilen (gesperrte bleiben)
+                tl = [s for s in old if self.fest(s)]
+                self._fill(tl)
+            else:
+                if not keep_locked:
+                    self.d["fertig_bis"] = None
+                    self.d["ende_weg"] = 0
+                    self.update_layout()
+                    p = self.make_planer()
+                locked = [s for s in old if s.get("lock") or alle_sperren] if keep_locked else []
+                tl = p.plan(locked)
             for s in tl:
                 s.setdefault("score", 0)
             self.settle(tl)
+            self.d["anteile_basis"] = {k: round(v, 2) for k, v in self.anteile_ist(tl).items()}
             self.d["timeline"] = self.clean_timeline(tl)
             self.d["plan_warnungen"] = p.warn
             if "plan" not in self.d["erledigt"]:
@@ -874,7 +886,277 @@ class Projekt:
             c = cl.get(s["clip"])
             if c is not None and s["dur"] > 0:
                 s["bewegung"] = motion_label(window_motion(c, s["src"], s["dur"]))
+        self._markiere_fix(tl)
         return tl, diff
+
+    # ------------------------------------------------------------------ „fertig bis hier“
+    # Alles bis zu diesem Schnitt gilt als fertig: Auffüllen, Ausgleichen und Neuplanen ändern dort nichts mehr.
+    # Die Markierung wandert mit jeder Bearbeitung nach hinten mit (nie zurück) und lässt sich von Hand setzen.
+    def fix_index(self, tl):
+        fid = self.d.get("fertig_bis")
+        if not fid:
+            return -1
+        return next((i for i, s in enumerate(tl) if s["id"] == fid), -1)
+
+    def _markiere_fix(self, tl):
+        fi = self.fix_index(tl)
+        for i, s in enumerate(tl):
+            if i <= fi:
+                s["_fix"] = True
+            else:
+                s.pop("_fix", None)
+        return fi
+
+    def _fix_bis(self, tl, idx):
+        """Markierung bis Position idx vorrücken (nur nach hinten)."""
+        if 0 <= idx < len(tl) and idx > self.fix_index(tl):
+            self.d["fertig_bis"] = tl[idx]["id"]
+        return self._markiere_fix(tl)
+
+    @staticmethod
+    def fest(s):
+        """Darf die Automatik diesen Schnitt ändern? Nicht, wenn gesperrt oder im fertigen Teil."""
+        return bool(s.get("lock") or s.get("_fix"))
+
+    def fertig_setzen(self, sid):
+        """Markierung von Hand setzen (auch zurück); sid=None hebt sie auf."""
+        with self.lock:
+            tl, _ = self.relayout()
+            self.d["fertig_bis"] = sid if sid and any(s["id"] == sid for s in tl) else None
+            self.save()
+            return {"ok": True, "fertig_bis": self.d["fertig_bis"]}
+
+    # ------------------------------------------------------------------ Anteile der Kategorien
+    def anteile_soll(self):
+        """Sekunden je Stichwort nach der Gewichtung (wie in Schritt 7 angezeigt)."""
+        try:
+            p = self.make_planer()
+        except RuntimeError:
+            return {}
+        alloc = p.allocate(p.N, {})
+        L = p.L_of(p.k)
+        out = {}
+        for z in self.scenes:
+            out[z["kw"]] = out.get(z["kw"], 0.0) + alloc.get(z["id"], 0) * L
+        return out
+
+    def anteile_ist(self, tl):
+        zkw = {z["id"]: z["kw"] for z in self.scenes}
+        out = {}
+        for s in tl:
+            kw = zkw.get(s.get("szene"))
+            if kw:
+                out[kw] = out.get(kw, 0.0) + float(s.get("dur") or 0.0)
+        return out
+
+    def anteile_ziel(self):
+        """Bezug für Abweichungen und Ausgleich: der Stand nach dem letzten Planen (oder „so lassen“), sonst die
+        Gewichtung."""
+        b = self.d.get("anteile_basis")
+        if b:
+            return {k: float(v) for k, v in b.items()}
+        soll = self.anteile_soll()
+        tot = sum(soll.values()) or 1.0
+        D = self.layout.D if self.layout else 0.0
+        return {k: v / tot * D for k, v in soll.items()}
+
+    def abweichungen(self, tl):
+        if not self.layout or not tl:
+            return []
+        ref, ist = self.anteile_ziel(), self.anteile_ist(tl)
+        D = self.layout.D or 1.0
+        k = int(self.d["schnitt"].get("k") or 0) or self.k_default()
+        L = self.layout.unit_len() * k
+        name = {x["id"]: x["name"] for x in self.d["stichworte"]}
+        out = []
+        for kw in set(ref) | set(ist):
+            d = ist.get(kw, 0.0) - ref.get(kw, 0.0)
+            if abs(d) > max(0.03 * D, 1.5 * L) and kw in name:   # mehr als 1½ Schnitte bzw. 3 Prozentpunkte
+                out.append({"kw": kw, "name": name[kw], "ist": round(100 * ist.get(kw, 0.0) / D),
+                            "soll": round(100 * ref.get(kw, 0.0) / D), "diff": round(d, 1)})
+        return sorted(out, key=lambda x: -abs(x["diff"]))
+
+    def anteile_ok(self):
+        with self.lock:
+            tl, _ = self.relayout()
+            self.d["anteile_basis"] = {k: round(v, 2) for k, v in self.anteile_ist(tl).items()}
+            self.save()
+            return {"ok": True}
+
+    def anteile_ausgleichen(self):
+        """Hinter „fertig bis hier“ Schnitte zu stark vertretener Kategorien gegen Schnitte zu schwach vertretener tauschen."""
+        with self.lock:
+            tl, _ = self.relayout()
+            ref = self.anteile_ziel()
+
+            def fehler(t):
+                PL.layout(t, self.layout.units)
+                ist = self.anteile_ist(t)
+                return sum(abs(ist.get(kw, 0.0) - ref.get(kw, 0.0)) for kw in set(ref) | set(ist))
+            zkw = {z["id"]: z["kw"] for z in self.scenes}
+            start_err = fehler(tl)
+            for _ in range(24):
+                before = fehler(tl)
+                ist = self.anteile_ist(tl)
+                over = sorted(ref.keys() | ist.keys(), key=lambda kw: -(ist.get(kw, 0.0) - ref.get(kw, 0.0)))
+                trial = None
+                for kw in over:
+                    if ist.get(kw, 0.0) - ref.get(kw, 0.0) <= 0:
+                        break
+                    cand = [x for x in tl if zkw.get(x.get("szene")) == kw and not self.fest(x)]
+                    if cand:
+                        trial = copy.deepcopy(tl)
+                        weg = min((x for x in trial if x["id"] in {c["id"] for c in cand}),
+                                  key=lambda x: x.get("score", 0))
+                        trial.remove(weg)
+                        self._zuteilen(trial, int(weg["k"]), ziel=ref)
+                        break
+                if trial is None or fehler(trial) >= before - 0.5:
+                    break
+                tl = trial
+            verbessert = fehler(tl) < start_err - 0.5
+            self.settle(tl)
+            self.d["timeline"] = self.clean_timeline(tl)
+            self.save()
+            return {"ok": True, "verbessert": verbessert}
+
+    # ------------------------------------------------------------------ freie Takte verteilen
+    def _platz(self, tl, s, add):
+        """Passt der Schnitt mit `add` Einheiten mehr (an seiner Stelle) samt seinen Geschwistern in den Clip?"""
+        cl = self.clip_by_name()
+        c, units, xf = cl[s["clip"]], self.layout.units, self.xf()
+        N = len(units) - 1
+        u0 = s.get("u0", 0)
+        dur = units[min(N, u0 + int(s["k"]) + add)] - units[min(N, u0)]
+        others = sum(x.get("dur", 0) + xf + PL.GAP for x in tl if x["clip"] == s["clip"] and x is not s)
+        return dur + xf + 2 * PL.EDGE + others <= c.dur
+
+    def _laenger(self, tl, rest, cands, gleichmaessig=True):
+        """Schnitte aus cands um insgesamt rest Einheiten verlängern (nacheinander oder reihum)."""
+        guard = 0
+        while rest > 0 and guard < 400:
+            guard += 1
+            progress = False
+            for s in cands:
+                if rest <= 0:
+                    break
+                while rest > 0 and s in tl and self._platz(tl, s, 1):
+                    s["k"] = int(s["k"]) + 1
+                    rest -= 1
+                    progress = True
+                    PL.layout(tl, self.layout.units)
+                    if gleichmaessig:
+                        break
+            if not progress:
+                break
+        return rest
+
+    def _chrono_clips(self, tl, zid, clips, pos, ausser=None):
+        """Clips der Szene, aus denen an Position pos etwas kommen darf, ohne die Zeitfolge gegenüber dem fertigen Teil
+        zu brechen: zeitlich nach dem letzten fertigen Schnitt dieser Szene davor und vor dem ersten fertigen danach."""
+        if self.d["schnitt"].get("bewegung"):
+            return list(clips)
+        cl = self.clip_by_name()
+        lo = hi = None
+        for i, x in enumerate(tl):
+            if x is ausser or x.get("szene") != zid or not x.get("_fix") or x.get("manuell"):
+                continue
+            c = cl.get(x["clip"])
+            if c is None:
+                continue
+            key = (c.start, c.idx)
+            if i < pos and (lo is None or key > lo):
+                lo = key
+            if i > pos and (hi is None or key < hi):
+                hi = key
+        if lo is None and hi is None:
+            return list(clips)
+        return [c for c in clips if (lo is None or (c.start, c.idx) > lo) and (hi is None or (c.start, c.idx) < hi)]
+
+    def _platz_schaffen(self, tl, delta, schuetzen, key):
+        """Zu viele Einheiten (länger als die Musik): erst ungesperrte Schnitte hinter „fertig bis hier“ weg (Reihenfolge
+        key), dann dort Schnitte kürzer, notfalls auch im fertigen Teil – die Musiklänge ist eine harte Regel."""
+        for stufe in (lambda x: not self.fest(x), lambda x: not x.get("lock")):
+            for x in sorted([x for x in tl if all(x is not y for y in schuetzen) and stufe(x)], key=key):
+                if delta <= 0:
+                    return 0
+                if int(x["k"]) <= delta or int(x["k"]) == 1:
+                    tl.remove(x)
+                    delta -= int(x["k"])
+            for x in [x for x in tl if all(x is not y for y in schuetzen) and stufe(x)]:
+                while delta > 0 and int(x["k"]) > 1:
+                    x["k"] = int(x["k"]) - 1
+                    delta -= 1
+            if delta <= 0:
+                return 0
+        return max(0, delta)
+
+    def _start_hinter_fix(self, tl):
+        fixed = [i for i, s in enumerate(tl) if s.get("_fix")]
+        return (max(fixed) + 1) if fixed else 0
+
+    def _zuteilen(self, tl, rest, ab=None, ziel=None, log=None):
+        """rest Einheiten hinter „fertig bis hier“ (bzw. ab Position ab) verteilen: neue Schnitte aus freiem Material in
+        der Kategorie, die am weitesten unter ihrem Anteil liegt – chronologisch in ihre Szene eingereiht, nie in eine
+        Szene vor dieser Stelle. Reicht das Material nicht, werden die Schnitte dahinter reihum länger.
+        Gibt zurück, was sich nicht unterbringen ließ."""
+        if rest <= 0 or not self.layout:
+            return max(0, rest)
+        units = self.layout.units
+        start = self._start_hinter_fix(tl) if ab is None else max(ab, self._start_hinter_fix(tl))
+        k = int(self.d["schnitt"].get("k") or 0) or self.k_default()
+        zorder = [z["id"] for z in self.scenes]
+        if start < len(tl):
+            z0 = tl[start].get("szene")
+        elif tl:
+            z0 = tl[-1].get("szene")
+        else:
+            z0 = zorder[0] if zorder else None
+        i0 = zorder.index(z0) if z0 in zorder else 0
+        erlaubt = [z for z in self.scenes[i0:] if PL.MENGE.get(z.get("menge", ""), 1.0) > 0]
+        ref = ziel if ziel is not None else self.anteile_ziel()
+        name = {x["id"]: x["name"] for x in self.d["stichworte"]}
+        xf = self.xf()
+        guard = 0
+        while rest >= k and guard < 80:
+            guard += 1
+            PL.layout(tl, units)
+            ist = self.anteile_ist(tl)
+            L = self.layout.unit_len() * k
+            best = None
+            for z in erlaubt:
+                proto = {"id": "neu", "clip": "", "src": 0.0, "dur": L, "k": k}
+                cand = PL.best_free_window(tl, proto, self._chrono_clips(tl, z["id"], z["clips"], start), xf,
+                                           slack=self._slack(proto))
+                if not cand:
+                    continue
+                have = sum(1 for x in tl if x.get("szene") == z["id"])
+                key = ref.get(z["kw"], 0.0) - ist.get(z["kw"], 0.0) - 0.25 * L * have + 0.01 * cand[0]
+                if best is None or key > best[0]:
+                    best = (key, z, cand)
+            if not best:
+                break
+            _, z, cand = best
+            new = {"id": PL.new_id(), "clip": cand[1], "src": round(cand[2], 3), "k": k, "lock": False, "szene": z["id"]}
+            idxs = [i for i, x in enumerate(tl) if i >= start and x.get("szene") == z["id"]]
+            if idxs:
+                pos = idxs[-1] + 1
+            else:
+                later = set(zorder[zorder.index(z["id"]) + 1:])
+                pos = next((i for i, x in enumerate(tl) if i >= start and x.get("szene") in later), len(tl))
+            tl.insert(max(pos, start), new)
+            rest -= k
+            self._resort_scene(tl, z["id"])
+            if log is not None:
+                log.append({"art": "neu", "kw": name.get(z["kw"], "")})
+        if rest > 0:
+            PL.layout(tl, units)
+            cands = [x for i, x in enumerate(tl) if i >= start and not self.fest(x)]
+            vor = rest
+            rest = self._laenger(tl, rest, cands, gleichmaessig=True)
+            if log is not None and vor > rest:
+                log.append({"art": "laenger", "n": vor - rest})
+        return rest
 
     def timeline_info(self):
         tl, diff = self.relayout()
@@ -900,10 +1182,13 @@ class Projekt:
                           "ueber": bool(s.get("ueber")), "problem": s["id"] in bad,
                           "proxy": f"/media/proxy/{c.hash}.webm", "clipdauer": round(c.dur, 2),
                           "hoch": c.portrait, "aspect": round(c.aspect, 4), "bild": self.thumb(c, s["src"] + s["dur"] / 2),
-                          "atmo": s.get("atmo"), "ton": s.get("ton", "")})
+                          "atmo": s.get("atmo"), "ton": s.get("ton", ""), "fertig": bool(s.get("_fix"))})
         lay = self.layout_info()
         return {"shots": shots, "probleme": probs, "differenz": diff, "absenken": self.absenkung_db(),
-                "originalton": self.d["schnitt"].get("originalton", "auto"), "k": int(self.d["schnitt"].get("k") or 0) or self.k_default(),
+                "originalton": self.d["schnitt"].get("originalton", "auto"),
+                "fertig_bis": self.d.get("fertig_bis") if self.fix_index(tl) >= 0 else None,
+                "abweichungen": self.abweichungen(tl), "ende_weg": int(self.d.get("ende_weg") or 0),
+                "ende_auto": bool(self.d.get("ende_auto")), "k": int(self.d["schnitt"].get("k") or 0) or self.k_default(),
                 "xf": self.xf(), "musik": lay, "warnungen": self.d.get("plan_warnungen", []),
                 "titel": self.titles_info(), "dauer": lay["dauer"] if lay else 0}
 
@@ -990,7 +1275,10 @@ class Projekt:
             sh["t_edit"] = time.time()
             for b in block:   # aufgegebene Nachbarn: neue Stelle in ihrer Szene suchen (oder entfernen)
                 self._reassign(tl, b, exclude={sh["id"]})
-            self._resort_scene(tl, sh.get("szene"))
+            sh.pop("_fix", None)     # der bearbeitete Schnitt darf in seiner Szene neu einsortiert werden
+            self._resort_scene(tl, sh.get("szene"), auch_fertig=True)
+            self._markiere_fix(tl)
+            self._fix_bis(tl, tl.index(sh))
             self.settle(tl)
             self.d["timeline"] = self.clean_timeline(tl)
             self.save()
@@ -1026,10 +1314,13 @@ class Projekt:
             if fixed:
                 continue
             for n in names:   # 2) einen ungesperrten Schnitt dieses Clips woanders hin
-                cand = sorted([s for s in tl if s["clip"] == n and not s.get("lock")], key=lambda s: -tl.index(s))
+                cand = sorted([s for s in tl if s["clip"] == n and not self.fest(s)], key=lambda s: -tl.index(s)) \
+                    or sorted([s for s in tl if s["clip"] == n and not s.get("lock")], key=lambda s: -tl.index(s))
+                # (die harten Regeln gehen vor: notfalls darf auch ein Schnitt im fertigen Teil eine andere Stelle bekommen)
                 for v in cand:
-                    best = PL.best_free_window(tl, v, [c for c in self.scene_clips(v.get("szene")) if c.name != n]
-                                               or [cl[n]], xf, slack=self._slack(v))
+                    sc = self._chrono_clips(tl, v.get("szene"), self.scene_clips(v.get("szene")), tl.index(v), ausser=v)
+                    best = PL.best_free_window(tl, v, [c for c in sc if c.name != n] or [cl[n]], xf,
+                                               slack=self._slack(v))
                     if best:
                         v["clip"], v["src"] = best[1], round(best[2], 3)
                         self._resort_scene(tl, v.get("szene"))
@@ -1044,9 +1335,11 @@ class Projekt:
             if fixed:
                 continue
             for n in names:   # 3) nur gesperrte: der älteste wird freigegeben
-                locked = [s for s in tl if s["clip"] == n and s.get("lock")]
-                if len(locked) >= 2:
-                    v = min(locked, key=lambda s: s.get("t_edit", 0))
+                locked = [s for s in tl if s["clip"] == n and self.fest(s)]
+                frei = [s for s in locked if not s.get("_fix")] or [s for s in locked if s.get("lock")]
+                # (lieber einen gesperrten hinter „fertig bis hier“ freigeben; die harten Regeln gehen aber vor)
+                if len(locked) >= 2 and frei:
+                    v = min(frei, key=lambda s: s.get("t_edit", 0))
                     v["lock"] = False
                     v.pop("manuell", None)
                     fixed = True
@@ -1065,8 +1358,9 @@ class Projekt:
         return max(0.15, (max(spans) if spans else 0.0) - float(sh.get("dur") or 0.0) + 0.05)
 
     def _reassign(self, tl, b, exclude=()):
-        best = PL.best_free_window(tl, b, self.scene_clips(b.get("szene")), self.xf(), exclude_ids=(),
-                                   slack=self._slack(b))
+        b.pop("_fix", None)      # aufgegeben: darf (auch im fertigen Teil) neu einsortiert werden
+        clips = self._chrono_clips(tl, b.get("szene"), self.scene_clips(b.get("szene")), tl.index(b), ausser=b)
+        best = PL.best_free_window(tl, b, clips, self.xf(), exclude_ids=(), slack=self._slack(b))
         if best:
             b["clip"], b["src"] = best[1], round(best[2], 3)
             b["lock"] = False
@@ -1074,47 +1368,35 @@ class Projekt:
             tl.remove(b)
             self._fill(tl)
 
-    def _resort_scene(self, tl, zid):
-        """Schnitte einer Szene (auf ihren Plätzen) chronologisch ordnen – außer von Hand umsortierte."""
+    def _resort_scene(self, tl, zid, auch_fertig=False):
+        """Schnitte einer Szene (auf ihren Plätzen) chronologisch ordnen – außer von Hand umsortierte und (wenn nicht
+        ausdrücklich gewollt, z. B. nach einer Bearbeitung dort) die im fertigen Teil."""
         if zid is None or self.d["schnitt"].get("bewegung"):
             return
         cl = self.clip_by_name()
-        pos = [i for i, s in enumerate(tl) if s.get("szene") == zid and not s.get("manuell")]
+        pos = [i for i, s in enumerate(tl) if s.get("szene") == zid and not s.get("manuell")
+               and (auch_fertig or not s.get("_fix"))]
         items = sorted([tl[i] for i in pos], key=lambda s: (cl[s["clip"]].start, cl[s["clip"]].idx, s["src"]))
         for i, s in zip(pos, items):
             tl[i] = s
 
     def _fill(self, tl, settle=True):
-        """Fehlende Raster-Einheiten am Ende auffüllen: neue Schnitte in Szenen mit freiem Material."""
+        """Fehlende Raster-Einheiten bis zum Musikende ergänzen – nur hinter „fertig bis hier“, nach den Anteilen."""
         if not self.layout:
             return
         N = len(self.layout.units) - 1
-        k = int(self.d["schnitt"].get("k") or 0) or self.k_default()
-        guard = 0
-        while sum(int(s["k"]) for s in tl) + k <= N and guard < 50:
-            guard += 1
-            PL.layout(tl, self.layout.units)
-            best = None
-            for z in self.scenes:
-                if PL.MENGE.get(z.get("menge", ""), 1.0) <= 0:
-                    continue
-                proto = {"id": "neu", "clip": "", "src": 0.0, "dur": self.layout.unit_len() * k, "k": k}
-                cand = PL.best_free_window(tl, proto, z["clips"], self.xf(), slack=self._slack(proto))
-                if cand:
-                    have = sum(1 for s in tl if s.get("szene") == z["id"])
-                    sc = cand[0] / (1 + have)
-                    if best is None or sc > best[0]:
-                        best = (sc, z, cand)
-            if not best:
-                break
-            _, z, cand = best
-            new = {"id": PL.new_id(), "clip": cand[1], "src": round(cand[2], 3), "k": k, "lock": False, "szene": z["id"]}
-            pos = max([i for i, s in enumerate(tl) if s.get("szene") == z["id"]] or [len(tl) - 1]) + 1
-            tl.insert(pos, new)
-            self._resort_scene(tl, z["id"])
+        PL.layout(tl, self.layout.units)
         rest = N - sum(int(s["k"]) for s in tl)
+        if rest > 0:
+            rest = self._zuteilen(tl, rest)
         if rest > 0 and tl:
-            PL.distribute_rest(tl, self.clip_by_name(), self.layout.units, self.xf())
+            rest = PL.distribute_rest(tl, self.clip_by_name(), self.layout.units, self.xf())
+        if rest > 0 and tl:
+            # nirgends mehr Material: lieber endet die Musik entsprechend früher (mit Ausblendung) als ein Loch im Bild
+            self.d["ende_weg"] = int(self.d.get("ende_weg") or 0) + rest
+            self.d["ende_auto"] = True
+            self.update_layout()
+            PL.layout(tl, self.layout.units)
         if settle:
             self.settle(tl)
 
@@ -1152,6 +1434,7 @@ class Projekt:
                 if block:
                     return {"ok": False, "kollision": [{"id": b["id"], "tl": round(b["tl0"], 2)} for b in block]}
             sh["k"], sh["src"], sh["lock"], sh["t_edit"] = k, round(src, 3), True, time.time()
+            self._fix_bis(tl, tl.index(sh))
             for b in block:
                 if b in tl:
                     tl.remove(b)
@@ -1160,16 +1443,15 @@ class Projekt:
             if delta > 0:
                 zid = sh.get("szene")
                 pos = tl.index(sh)
-                cand = sorted([s for s in tl if s is not sh and not s.get("lock")],
-                              key=lambda s: (s.get("szene") != zid, abs(tl.index(s) - pos), s.get("score", 0)))
-                for s in cand:
-                    if delta <= 0:
-                        break
-                    tl.remove(s)
-                    delta -= int(s["k"])
+                rem = self._platz_schaffen(tl, delta, [sh], key=lambda s: (s.get("szene") != zid,
+                                                                                   abs(tl.index(s) - pos), s.get("score", 0)))
+                if rem > 0:   # alles andere gesperrt: dann eben nur so viel länger, wie Platz ist
+                    sh["k"] = max(1, int(sh["k"]) - rem)
             if delta < 0:
                 self._fill(tl)
-            self._resort_scene(tl, sh.get("szene"))
+            sh.pop("_fix", None)
+            self._resort_scene(tl, sh.get("szene"), auch_fertig=True)
+            self._markiere_fix(tl)
             self.settle(tl)
             self.d["timeline"] = self.clean_timeline(tl)
             self.save()
@@ -1186,6 +1468,7 @@ class Projekt:
             sh["lock"] = True
             sh["manuell"] = True
             sh["t_edit"] = time.time()
+            self._fix_bis(tl, tl.index(sh))
             self.settle(tl)
             self.d["timeline"] = self.clean_timeline(tl)
             self.save()
@@ -1197,11 +1480,15 @@ class Projekt:
             sh = next((s for s in tl if s["id"] == sid), None)
             if sh is None:
                 raise RuntimeError(_t("Schnitt nicht gefunden"))
-            best = PL.best_free_window(tl, sh, self.scene_clips(sh.get("szene")), self.xf(), slack=self._slack(sh))
+            clips = self._chrono_clips(tl, sh.get("szene"), self.scene_clips(sh.get("szene")), tl.index(sh), ausser=sh)
+            best = PL.best_free_window(tl, sh, clips, self.xf(), slack=self._slack(sh))
             if not best:
                 return {"ok": False, "fehler": _t("In dieser Szene ist keine andere freie Stelle mehr.")}
             sh["clip"], sh["src"], sh["lock"], sh["t_edit"] = best[1], round(best[2], 3), True, time.time()
-            self._resort_scene(tl, sh.get("szene"))
+            sh.pop("_fix", None)
+            self._resort_scene(tl, sh.get("szene"), auch_fertig=True)
+            self._markiere_fix(tl)
+            self._fix_bis(tl, tl.index(sh))
             self.settle(tl)
             self.d["timeline"] = self.clean_timeline(tl)
             self.save()
@@ -1245,17 +1532,16 @@ class Projekt:
                         else _t("In dieser Szene ist keine freie Stelle mehr.")}
             new = {"id": PL.new_id(), "clip": cand[1], "src": round(cand[2], 3), "k": k, "lock": True, "manuell": True,
                    "szene": zid, "t_edit": time.time()}
+            vorher = (self.clean_timeline(tl), self.d.get("fertig_bis"))
             tl.insert(tl.index(sh) + 1, new)
             sh["lock"] = True        # der Schnitt davor bleibt mit stehen – die beiden gehören jetzt zusammen
+            self._fix_bis(tl, tl.index(new))
             delta = sum(int(s["k"]) for s in tl) - (len(self.layout.units) - 1)
             if delta > 0:
-                cand_rm = sorted([s for s in tl if s is not new and s is not sh and not s.get("lock")],
-                                 key=lambda s: (s.get("szene") == zid, s.get("score", 0)))
-                for s in cand_rm:
-                    if delta <= 0:
-                        break
-                    tl.remove(s)
-                    delta -= int(s["k"])
+                rem = self._platz_schaffen(tl, delta, [sh, new], key=lambda s: (s.get("szene") == zid, s.get("score", 0)))
+                if rem > 0:
+                    self.d["timeline"], self.d["fertig_bis"] = vorher
+                    return {"ok": False, "fehler": _t("Kein Platz: Alle anderen Schnitte sind gesperrt.")}
             if delta < 0:
                 self._fill(tl, settle=False)
             self.settle(tl)
@@ -1263,19 +1549,110 @@ class Projekt:
             self.save()
             return {"ok": True, "id": new["id"]}
 
-    def shot_entfernen(self, sid, sperren_stelle=True):
+    AUSGLEICH = ("rest", "nachbar", "kuerzer")
+    AEHNLICH_RAND = 3.0   # so weit um einen gelöschten Ausschnitt herum (in derselben Einstellung) nicht nachrücken
+
+    def _aehnlich(self, c, sh):
+        """Bereich um einen gelöschten Ausschnitt, der für die Automatik gesperrt wird: dieselbe Einstellung
+        (Perspektive) bis zu AEHNLICH_RAND Sekunden davor und danach – damit nichts fast Gleiches nachrückt."""
+        a, b = sh["src"], sh["src"] + sh["dur"]
+        mid = (a + b) / 2
+        seg = next((g for g in (c.segs or []) if g["t0"] <= mid <= g["t1"]), None)
+        lo, hi = (seg["t0"], seg["t1"]) if seg else (a, b)
+        return round(max(lo, a - self.AEHNLICH_RAND, 0.0), 2), round(min(hi, b + self.AEHNLICH_RAND, c.dur), 2)
+
+    def _entfernen(self, tl, sh, ausgleich, log):
+        """Schnitt raus, die Schnitte dahinter rücken nach. Die freien Einheiten: „rest“ = auf die Kategorien dahinter
+        verteilen, „nachbar“ = die folgenden Schnitte länger, „kuerzer“ = Film (Musik) am Ende entsprechend kürzer.
+        Gibt die Einheiten zurück, die sich nicht unterbringen ließen."""
+        idx = tl.index(sh)
+        if sh["id"] == self.d.get("fertig_bis"):     # Markierung lag auf dem gelöschten: eins davor
+            self.d["fertig_bis"] = tl[idx - 1]["id"] if idx > 0 else None
+        tl.remove(sh)
+        self._fix_bis(tl, idx - 1)                 # alles vor der gelöschten Stelle ist jetzt fertig
+        PL.layout(tl, self.layout.units)
+        frei = int(sh["k"])
+        if ausgleich == "kuerzer":
+            return 0
+        if ausgleich == "nachbar":
+            cands = [x for x in tl[idx:] if not self.fest(x)]
+            vor = frei
+            frei = self._laenger(tl, frei, cands, gleichmaessig=False)
+            if vor > frei:
+                log.append({"art": "nachbar", "n": vor - frei})
+        if frei > 0:
+            frei = self._zuteilen(tl, frei, ab=idx, log=log)
+        return frei
+
+    def entfernen_optionen(self, sid):
+        """Für den Dialog beim Entfernen: Was passiert bei welcher Wahl, und was geht gar nicht?"""
         with self.lock:
             tl, _ = self.relayout()
             sh = next((s for s in tl if s["id"] == sid), None)
             if sh is None:
                 raise RuntimeError(_t("Schnitt nicht gefunden"))
-            if sperren_stelle:   # die Stelle soll nicht wieder automatisch gewählt werden
+            c = self.clip_by_name()[sh["clip"]]
+            bereich = self._aehnlich(c, sh)
+            c.excl.append(bereich)
+            fid = self.d.get("fertig_bis")
+            out = {}
+            try:
+                for art in ("nachbar", "rest"):
+                    t2 = copy.deepcopy(tl)
+                    log = []
+                    rest = self._entfernen(t2, next(x for x in t2 if x["id"] == sid), art, log)
+                    self.d["fertig_bis"] = fid
+                    out[art] = {"ok": rest == 0, "log": log}
+            finally:
+                c.excl.remove(bereich)
+                self.d["fertig_bis"] = fid
+                self._markiere_fix(tl)
+            N = len(self.layout.units) - 1
+            sek = round(sh["dur"], 1)
+            out["kuerzer"] = {"ok": N - int(sh["k"]) > 8, "sekunden": sek}
+            out["takte"] = int(sh["k"])
+            out["sekunden"] = sek
+            return out
+
+    def shot_entfernen(self, sid, sperren_stelle=True, ausgleich="rest"):
+        ausgleich = ausgleich if ausgleich in self.AUSGLEICH else "rest"
+        with self.lock:
+            tl, _ = self.relayout()
+            sh = next((s for s in tl if s["id"] == sid), None)
+            if sh is None:
+                raise RuntimeError(_t("Schnitt nicht gefunden"))
+            if sperren_stelle:   # die Stelle (und fast Gleiches daneben) soll nicht wieder automatisch gewählt werden
+                c = self.clip_by_name()[sh["clip"]]
                 u = self.d["clips"].setdefault(sh["clip"], {})
-                u.setdefault("aus", []).append([round(sh["src"], 2), round(sh["src"] + sh["dur"], 2)])
+                u.setdefault("aus", []).append(list(self._aehnlich(c, sh)))
                 self.apply_user_clip_settings()
-            tl.remove(sh)
-            self._fill(tl)
+            log = []
+            rest = self._entfernen(tl, sh, ausgleich, log)
+            if rest > 0 and ausgleich != "kuerzer":
+                self._fill(tl, settle=False)     # notfalls endet die Musik entsprechend früher
+                rest = 0
+            if ausgleich == "kuerzer":
+                self.d["ende_weg"] = int(self.d.get("ende_weg") or 0) + int(sh["k"])
+                self.d["ende_auto"] = False
+                self.update_layout()
+                PL.layout(tl, self.layout.units)
+                rest = (len(self.layout.units) - 1) - sum(int(x["k"]) for x in tl)
+                if rest > 0:
+                    rest = self._zuteilen(tl, rest)
             self.settle(tl)
+            self.d["timeline"] = self.clean_timeline(tl)
+            self.save()
+            return {"ok": True, "rest": rest, "log": log}
+
+    def ende_zuruecknehmen(self):
+        """„Film kürzer“ aus der Timeline rückgängig: die Musik läuft wieder bis zu ihrem Ende, die freien Takte werden
+        hinter „fertig bis hier“ verteilt."""
+        with self.lock:
+            self.d["ende_weg"] = 0
+            self.d["ende_auto"] = False
+            self.update_layout()
+            tl, _ = self.relayout()
+            self._fill(tl)
             self.d["timeline"] = self.clean_timeline(tl)
             self.save()
             return {"ok": True}
@@ -1288,7 +1665,7 @@ class Projekt:
                 sh["lock"] = bool(lock)
                 sh["t_edit"] = time.time()
                 if not lock and sh.pop("manuell", None):
-                    self._resort_scene(tl, sh.get("szene"))   # Automatik darf wieder: zurück in die Zeitfolge
+                    self._resort_scene(tl, sh.get("szene"), auch_fertig=True)   # Automatik darf wieder: zurück in die Zeitfolge
                     self.settle(tl)
                 self.d["timeline"] = self.clean_timeline(tl)
                 self.save()
@@ -1298,12 +1675,7 @@ class Projekt:
         with self.lock:
             tl, diff = self.relayout()
             if diff > 0:   # Überhang: ungesperrte Schnitte am Ende entfernen
-                for s in reversed(list(tl)):
-                    if diff <= 0:
-                        break
-                    if not s.get("lock"):
-                        tl.remove(s)
-                        diff -= int(s["k"])
+                self._platz_schaffen(tl, diff, [], key=lambda s: -tl.index(s))
             self._fill(tl)
             self.settle(tl)
             self.d["timeline"] = self.clean_timeline(tl)
@@ -1434,6 +1806,7 @@ class Projekt:
                 sh["ton"] = ton
                 sh["lock"] = True
                 sh["t_edit"] = time.time()
+                self._fix_bis(tl, tl.index(sh))
             else:
                 sh.pop("ton", None)
             self.d["timeline"] = self.clean_timeline(tl)

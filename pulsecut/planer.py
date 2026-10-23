@@ -459,7 +459,7 @@ def distribute_rest(timeline, clips, units, xf):
 
     layout(timeline, units)
     last = timeline[-1]
-    if rest <= max(1, int(last["k"])) and not last.get("lock") and room(last, rest):
+    if rest <= max(1, int(last["k"])) and not (last.get("lock") or last.get("_fix")) and room(last, rest):
         last["k"] = int(last["k"]) + rest
         return 0
     guard = 0
@@ -469,7 +469,7 @@ def distribute_rest(timeline, clips, units, xf):
         for s in reversed(timeline):
             if rest <= 0:
                 break
-            if s.get("lock") or not room(s, 1):
+            if s.get("lock") or s.get("_fix") or not room(s, 1):
                 continue
             s["k"] = int(s["k"]) + 1
             rest -= 1
