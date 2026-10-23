@@ -172,6 +172,8 @@ EN = {
     "KI-Erkennung ist nicht eingerichtet": "AI recognition is not set up",
     "lade KI-Modell {m} (beim ersten Mal Download)": "loading AI model {m} (downloaded the first time)",
     "KI-Worker abgebrochen: ": "AI worker stopped: ",
+    "In diesem Clip ist keine freie Stelle mehr.": "There is no free passage left in this clip.",
+    "In dieser Szene ist keine freie Stelle mehr.": "There is no free passage left in this scene.",
     # hwdec.py
     "VAAPI-Treiber fehlt (Paket intel-media-va-driver oder i965-va-driver)":
         "VAAPI driver missing (package intel-media-va-driver or i965-va-driver)",

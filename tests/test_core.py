@@ -142,3 +142,29 @@ def test_excluded_clips_and_new_keyword(projekt):
     assert projekt.erk["ki"], "recognition fell back to no-AI mode after adding a keyword"
     projekt.plan(keep_locked=False)
     assert problems(projekt) == ([], 0)
+
+
+def test_insert_another_clip_of_the_scene(projekt):
+    """Step 9: take another clip of the same scene and put it right after the selected shot."""
+    prepare(projekt)
+    tl, _ = projekt.relayout()
+    n0 = len(tl)
+    frei = [(s, c) for s in tl for c in projekt.szenen_clips(s["id"])["clips"] if c["frei"]]
+    print("shots with free material in their scene:", len({s["id"] for s, _ in frei}), "of", len(tl))
+    sh, pick = next(((s, c) for s, c in frei if c["name"] != s["clip"]), frei[0])
+    r = projekt.shot_einfuegen(sh["id"], pick["name"])
+    assert r["ok"], r
+    tl, diff = projekt.relayout()
+    ids = [s["id"] for s in tl]
+    new = tl[ids.index(sh["id"]) + 1]
+    assert new["id"] == r["id"] and new["clip"] == pick["name"] and new["lock"]
+    assert new["szene"] == sh["szene"]
+    assert problems(projekt, allow_unchrono=True) == ([], 0)       # film length unchanged, no overlaps
+    assert abs(len(tl) - n0) <= 2
+    projekt.plan(keep_locked=True)                                  # locked: survives re-planning (in its scene)
+    tl, _ = projekt.relayout()
+    ids = [s["id"] for s in tl]
+    assert r["id"] in ids and sh["id"] in ids
+    # automatic choice within the scene
+    r2 = projekt.shot_einfuegen(sh["id"])
+    assert r2["ok"] or r2.get("fehler")

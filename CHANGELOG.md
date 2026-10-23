@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.0.7 – 2026-10-23
+- Timeline (step 9): **original sound per shot** – Auto / On / Off in the shot inspector, with the reason when a
+  shot has no original sound (music in the video, nothing atmospheric, switched off for the clip …). “On” also works
+  where music plays in the video – that is then your decision. The switch for the whole film (music only /
+  atmosphere added / music quieter) is also at the top of the timeline. Existing projects open as they are, nothing
+  is analysed again.
+- Timeline: **insert another clip of the same scene** right after the selected shot – pick it from the scene's clips
+  (with thumbnail and how often it is already in the film) or let Pulsecut choose. The film length stays the same:
+  an unlocked shot of another scene makes room.
+- Preview: no more flicker on hard cuts into another video file. The next shots are loaded earlier, held exactly at
+  their first frame, and if a video is not ready at the cut, the last picture stays for a moment instead of a still
+  image.
+
 ## 1.0.6 – 2026-10-23
 - Faster video analysis in **one pass**: analysis, sound and the preview video now come from a single ffmpeg run
   (before, every video was read two to three times). The results are identical.

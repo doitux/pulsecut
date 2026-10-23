@@ -287,6 +287,59 @@ def test_workflow(app):
         tl3 = pg.evaluate("fetch('/api/timeline').then(r=>r.json())")
         assert tl3["differenz"] == 0
         assert not [p for p in tl3["probleme"] if p["art"] in ("ueberlappung", "rand")]
+        # original sound per shot (step 9): off for one shot, then the switch for the whole film
+        pg.click(f".shot[data-id='{sel['id']}']")
+        pg.wait_for_selector("#insp [data-f=iton]")
+        pg.wait_for_timeout(300)
+        with pg.expect_response(lambda r: "/api/shot/ton" in r.url):
+            pg.click("#insp [data-f=iton] button[data-v=aus]")
+        pg.wait_for_timeout(1200)
+        tl4 = pg.evaluate("fetch('/api/timeline').then(r=>r.json())")
+        s4 = next(s for s in tl4["shots"] if s["id"] == sel["id"])
+        assert s4["ton"] == "aus" and s4["atmo"] is None and s4["ton_info"]["grund"] == "aus_schnitt"
+        assert pg.inner_text("#itoninfo")
+        with pg.expect_response(lambda r: "/api/schnitt" in r.url):
+            pg.click("#tton button[data-v=aus]")
+        pg.wait_for_timeout(1200)
+        tl5 = pg.evaluate("fetch('/api/timeline').then(r=>r.json())")
+        assert tl5["originalton"] == "aus" and not any(s["atmo"] for s in tl5["shots"])
+        with pg.expect_response(lambda r: "/api/schnitt" in r.url):
+            pg.click("#tton button[data-v=leiser]")
+        pg.wait_for_timeout(1200)
+        assert pg.evaluate("fetch('/api/timeline').then(r=>r.json())")["originalton"] == "auto"
+        # insert another clip of the same scene right after a shot
+        tlx = pg.evaluate("fetch('/api/timeline').then(r=>r.json())")
+        anchor = None
+        for s_ in tlx["shots"]:
+            sc = pg.evaluate(f"fetch('/api/szenenclips?id={s_['id']}').then(r=>r.json())")
+            if any(c["frei"] for c in sc["clips"]):
+                anchor = s_
+                break
+        assert anchor, "no scene with free material in the test footage"
+        pg.evaluate("id=>document.querySelector(`.shot[data-id='${id}']`).scrollIntoView()", anchor["id"])
+        pg.click(f".shot[data-id='{anchor['id']}']")
+        pg.wait_for_selector("#iplus")
+        pg.wait_for_timeout(300)
+        pg.click("#iplus")
+        pg.wait_for_selector(".clipwahl button")
+        snap("11_clip_einfuegen")
+        with pg.expect_response(lambda r: "/api/shot/einfuegen" in r.url) as resp:
+            pg.click(".clipwahl button:not([disabled])")
+        r_ = resp.value.json()
+        assert r_["ok"], r_
+        pg.wait_for_timeout(1500)
+        tl6 = pg.evaluate("fetch('/api/timeline').then(r=>r.json())")
+        ids6 = [s_["id"] for s_ in tl6["shots"]]
+        assert ids6.index(r_["id"]) == ids6.index(anchor["id"]) + 1
+        assert tl6["differenz"] == 0 and not [p for p in tl6["probleme"] if p["art"] in ("ueberlappung", "rand")]
+        # playback across cuts into other video files: no still-image fallback once it runs
+        pg.evaluate("""() => { const P = PLY; P._fb = 0; const o = P.img.bind(P);
+            P.img = u => { if (u && !u.includes('titel') && P.playing && P.t > 1.2) P._fb++; return o(u); }; }""")
+        pg.evaluate("PLY.seek(0); PLY.play()")
+        pg.wait_for_timeout(9000)
+        fb = pg.evaluate("PLY._fb")
+        pg.evaluate("PLY.pause()")
+        assert fb <= 3, f"preview showed the still image {fb} times while playing"
         # language switch round trip
         other_lang = "de" if lang == "en" else "en"
         pg.click(f"#lang button[data-v={other_lang}]")

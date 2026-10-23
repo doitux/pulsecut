@@ -181,6 +181,8 @@ def api_get(path, q):
         return {"name": c.name, "dauer": c.dur, "hoch": c.portrait, "aspect": c.aspect,
                 "bilder": [[f[0], f"/bild/{c.hash}/{f[1]}"] for f in c.ana.get("ki_frames", [])],
                 "aus": [list(x) for x in c.excl], "proxy": f"/media/proxy/{c.hash}.webm"}
+    if path == "/api/szenenclips":
+        return pr.szenen_clips(q.get("id", [""])[0])
     if path == "/api/bereich":
         sid = q.get("id", [""])[0]
         tl, _ = pr.relayout()
@@ -394,6 +396,10 @@ def api_post(path, b, raw=None, ctype=""):
             return pr.shot_entfernen(sid, bool(b.get("stelle_sperren", True)))
         if op == "sperren":
             return pr.shot_sperren(sid, bool(b.get("lock")))
+        if op == "ton":
+            return pr.shot_ton(sid, b.get("ton", ""))
+        if op == "einfuegen":
+            return pr.shot_einfuegen(sid, b.get("clip") or None)
         raise KeyError(path)
     if path == "/api/auffuellen":
         return pr.auffuellen()

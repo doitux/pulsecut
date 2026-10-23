@@ -40,6 +40,41 @@ def test_music_only_and_clip_override(projekt):
     assert not any(s["atmo"] and s["clip"] == music_clip for s in planned(projekt))
 
 
+def test_shot_override_in_the_timeline(projekt):
+    """Step 9: per shot on/off, kept through re-planning (the shot gets locked), wins over the clip setting."""
+    prepare(projekt)
+    shots = planned(projekt)
+    on = next(s for s in shots if s["atmo"])
+    assert on["ton_info"]["grund"] == "dabei"
+    assert projekt.shot_ton(on["id"], "aus")["ok"]
+    after = {s["id"]: s for s in planned(projekt)}
+    assert after[on["id"]]["atmo"] is None and after[on["id"]]["ton_info"]["grund"] == "aus_schnitt"
+    assert after[on["id"]]["lock"]
+    projekt.plan(keep_locked=True)                     # survives re-planning
+    after = {s["id"]: s for s in planned(projekt)}
+    assert after[on["id"]]["ton"] == "aus" and after[on["id"]]["atmo"] is None
+    # a quiet shot without anything atmospheric: "on" takes it in
+    quiet = next(s for s in planned(projekt) if not s["atmo"] and s["ton_info"]["grund"] == "unauffaellig")
+    projekt.shot_ton(quiet["id"], "an")
+    assert {s["id"]: s for s in planned(projekt)}[quiet["id"]]["atmo"]
+    # music in the video: automatic never, "on" in the timeline is the user's decision
+    mus = next(s for s in planned(projekt) if AUDIO[s["clip"]] == "musik")
+    assert mus["ton_info"]["grund"] == "musik" and not mus["atmo"]
+    projekt.shot_ton(mus["id"], "an")
+    m2 = {s["id"]: s for s in planned(projekt)}[mus["id"]]
+    assert m2["atmo"] and m2["ton_info"]["musik"]
+    # the shot setting beats the clip setting
+    projekt.set_clip(mus["clip"], ton="aus")
+    assert {s["id"]: s for s in planned(projekt)}[mus["id"]]["atmo"]
+    projekt.set_clip(mus["clip"], ton="")
+    projekt.shot_ton(mus["id"], "")                    # back to automatic
+    assert not {s["id"]: s for s in planned(projekt)}[mus["id"]]["atmo"]
+    # "music only" switches everything off
+    projekt.d["schnitt"]["originalton"] = "aus"
+    assert all(not s["atmo"] and s["ton_info"]["grund"] == "aus_gesamt" for s in planned(projekt))
+    projekt.d["schnitt"]["originalton"] = "auto"
+
+
 def test_ducking_curve():
     spans = EX.duck_spans([{"pos": 100, "len": 200, "fi": 30, "fo": 40}, {"pos": 300, "len": 100, "fi": 15, "fo": 40}])
     assert spans == [(100, 130, 360, 400)]

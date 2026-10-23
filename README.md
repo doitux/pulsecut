@@ -43,7 +43,8 @@ footage shows children.
 8. **Timeline and live preview.** Play the film with a playhead. Slip a shot's passage within its clip by dragging
    or swiping (its length stays on the beat); if it bumps into a neighbouring shot from the same clip, Pulsecut asks
    whether to give the neighbour up. Double or triple a shot's length, reorder by dragging, suggest another passage,
-   remove. Everything you change is locked and survives re-planning.
+   remove, insert another clip of the same scene right after it, switch its original sound on or off. Everything you
+   change is locked and survives re-planning.
 9. **Title and credits** in 12 styles (band, card, glass, lines, frame, lower third, highlighter, glow, outline,
    cinema …) with any installed font and an accent colour – chosen from a gallery rendered on your own footage.
 10. **Original sound.** Three options: *music only*; *atmosphere added, music stays*; *atmosphere added, music

@@ -636,7 +636,7 @@ R.schnitt = {
         <div class="row"><span class="lab">${T("Kamera&shy;bewegung")}</span><label><input type="checkbox" id="sbew" ${s.bewegung ? "checked" : ""}> ${T("Für gegenläufige Kamerabewegungen (z. B. Schwenk links → Schwenk rechts, Zoom rein → raus) darf innerhalb einer Szene von der zeitlichen Reihenfolge abgewichen werden")}</label></div>
         <div class="meta" style="margin-left:96px">${T("Aus: streng chronologisch, abwechselnde Bewegungen werden trotzdem bevorzugt. Überlappungen gibt es nie.")}</div>
         <div class="row"><span class="lab">${T("Originalton")}</span>${seg("ton", [["aus", T("Nur Musik")], ["dazu", T("Stimmung dazu, Musik bleibt")], ["leiser", T("Stimmung dazu, Musik leiser")]], s.originalton === "aus" ? "aus" : (+s.absenken > 0 ? "leiser" : "dazu"))}</div>
-        <div class="meta" style="margin-left:96px">${s.originalton === "aus" ? T("Der Originalton der Videos bleibt stumm, die ausgewählte Musik läuft durch.") : T("Lachen, Applaus, Jubel, Stimmen und Gruppengeräusche werden erkannt und weich ein- und ausgeblendet – nur wo im Video keine Musik läuft (Proben, Konzerte bleiben stumm). Je Clip lässt sich der Ton unter „Videos“ auf An oder Aus stellen.")}</div>
+        <div class="meta" style="margin-left:96px">${s.originalton === "aus" ? T("Der Originalton der Videos bleibt stumm, die ausgewählte Musik läuft durch.") : T("Lachen, Applaus, Jubel, Stimmen und Gruppengeräusche werden erkannt und weich ein- und ausgeblendet – nur wo im Video keine Musik läuft (Proben, Konzerte bleiben stumm). Je Clip lässt sich der Ton unter „Videos“ auf An oder Aus stellen, je Schnitt in der Timeline.")}</div>
       </div>
       <div class="box col"><b>${T("Titel & Abspann")}</b>
         <div class="row"><span class="lab">${T("Titel")}</span><input type="text" id="stit" value="${esc(s.titel)}" style="flex:1"></div>
@@ -690,7 +690,10 @@ class Player {
     this.audio = new Audio(); this.audio.preload = "auto";
     this.pool = []; const hid = document.createElement("div"); hid.style.cssText = "position:absolute;width:1px;height:1px;overflow:hidden;opacity:0;pointer-events:none";
     document.body.appendChild(hid); this.hid = hid;
-    for (let i = 0; i < 4; i++) { const v = document.createElement("video"); v.muted = true; v.preload = "auto"; v.playsInline = true; hid.appendChild(v); v._shot = null; v._used = 0; v.addEventListener("seeked", () => this.dirty = true); v.addEventListener("loadeddata", () => this.dirty = true); this.pool.push(v); }
+    // eigene Fläche für die Videobilder: ist das nächste Video im Moment des Schnitts noch nicht bereit, bleibt hier das
+    // letzte Bild stehen (statt kurz das Standbild oder Schwarz zu zeigen)
+    this.buf = document.createElement("canvas"); this.buf.width = this.W; this.buf.height = this.H; this.bg = this.buf.getContext("2d"); this.bufOk = false;
+    for (let i = 0; i < 6; i++) { const v = document.createElement("video"); v.muted = true; v.preload = "auto"; v.playsInline = true; hid.appendChild(v); v._shot = null; v._used = 0; v.addEventListener("seeked", () => this.dirty = true); v.addEventListener("loadeddata", () => this.dirty = true); this.pool.push(v); }
     this.t = 0; this.playing = false; this.override = null; this.imgs = {}; this.dirty = true;
     this.audio.addEventListener("ended", () => this.pause());
     const loop = () => { this.frame(); requestAnimationFrame(loop); }; requestAnimationFrame(loop);
@@ -717,7 +720,7 @@ class Player {
   play() { if (!this.shots || !this.shots.length) return; if (this.t >= this.D - 0.05) this.t = 0; this.audio.currentTime = this.t; this.audio.play().catch(() => {}); this.playing = true; }
   pause() { this.playing = false; this.audio.pause(); this.pool.forEach(v => v.pause()); this.dirty = true; }
   toggle() { this.playing ? this.pause() : this.play(); }
-  seek(t) { this.t = Math.max(0, Math.min(this.D, t)); if (this.playing) this.audio.currentTime = this.t; this.dirty = true; }
+  seek(t) { this.t = Math.max(0, Math.min(this.D, t)); if (this.playing) this.audio.currentTime = this.t; this.bufOk = false; this.dirty = true; }
   idxAt(t) { const s = this.shots; let lo = 0, hi = s.length - 1, k = 0; while (lo <= hi) { const m = (lo + hi) >> 1; if (s[m].tl0 <= t) { k = m; lo = m + 1; } else hi = m - 1; } return k; }
   srcOf(s) { return this.override && this.override.id === s.id ? this.override.src : s.src; }
   layers(t) {
@@ -743,22 +746,43 @@ class Player {
     else if (!this.dirty) return;
     this.dirty = false;
     const t = this.t, {L, i} = this.layers(t), want = L.map(l => l.s.id);
-    const nxt = this.shots[i + 1]; if (nxt && t > this.shots[i].tl1 - 1.5) want.push(nxt.id);
-    const g = this.g; g.globalAlpha = 1; g.filter = "none"; g.fillStyle = "#000"; g.fillRect(0, 0, this.W, this.H);
+    // die nächsten Schnitte früh vorladen – genau an ihrem Anfang angehalten, damit der Wechsel in eine andere
+    // Videodatei sofort klappt
+    for (const j of [i + 1, i + 2]) { const n = this.shots[j]; if (n && n.tl0 - t < 6 && !want.includes(n.id)) want.push(n.id); }
+    const lay = [];
     for (const id of want) {
       const s = this.shots.find(x => x.id === id), v = this.el(s, want);
-      const mt = this.srcOf(s) + (t - s.tl0);
-      const lay = L.find(l => l.s.id === id);
-      if (!lay) { if (Math.abs(v.currentTime - mt) > 0.3 && v.readyState >= 1) v.currentTime = Math.max(0, mt); continue; }   // vorladen
+      const l = L.find(l => l.s.id === id), start = this.srcOf(s);
+      if (!l) {   // vorladen
+        if (!v.paused) v.pause();
+        if (v.readyState >= 1 && !v.seeking && Math.abs(v.currentTime - start) > 0.04) v.currentTime = Math.max(0, start);
+        v.muted = true; continue;
+      }
+      const mt = start + (t - s.tl0);
       if (v.readyState >= 1) {
-        if (this.playing) { if (v.paused) v.play().catch(() => {}); if (Math.abs(v.currentTime - mt) > 0.25) v.currentTime = Math.max(0, mt); }
+        if (this.playing) { if (v.paused) v.play().catch(() => {}); if (Math.abs(v.currentTime - mt) > 0.25 && !v.seeking) v.currentTime = Math.max(0, mt); }
         else { if (!v.paused) v.pause(); if (Math.abs(v.currentTime - mt) > 0.04) v.currentTime = Math.max(0, mt); }
       }
       if (s.atmo && this.playing) { v.muted = false; const e = Math.min(1, (t - s.tl0) / 0.6, (s.tl1 - t) / 0.6); v.volume = Math.max(0, Math.min(1, Math.pow(10, s.atmo.gain_db / 20) * Math.max(0.15, e))); } else v.muted = true;
-      g.globalAlpha = lay.a;
-      const src = v.readyState >= 2 ? v : this.img(s.bild);
-      if (src) this.draw(src, s.aspect);
+      lay.push({s, v, a: l.a});
     }
+    for (const v of this.pool) if (!want.includes(v._shot) && !v.paused) v.pause();   // Rechenzeit sparen
+    const bereit = lay.every(x => x.v.readyState >= 2 && !x.v.seeking);
+    // höchstens eine halbe Sekunde das letzte Bild halten, danach lieber das Standbild als ein eingefrorenes Bild
+    if (bereit) this.wait0 = 0; else if (!this.wait0) this.wait0 = performance.now();
+    const halten = this.playing && this.bufOk && !bereit && performance.now() - this.wait0 < 500;
+    if (!halten) {
+      const b = this.bg; b.globalAlpha = 1; b.filter = "none"; b.fillStyle = "#000"; b.fillRect(0, 0, this.W, this.H);
+      const order = L.map(l => lay.find(x => x.s.id === l.s.id)).filter(Boolean);
+      for (const x of order) {
+        b.globalAlpha = x.a;
+        const src = x.v.readyState >= 2 ? x.v : this.img(x.s.bild);
+        if (src) this.draw(b, src, x.s.aspect);
+      }
+      this.bufOk = bereit;
+      if (!bereit) this.dirty = true;
+    }
+    const g = this.g; g.globalAlpha = 1; g.filter = "none"; g.drawImage(this.buf, 0, 0);
     g.globalAlpha = 1; g.filter = "none";
     for (const ti of this.titles) {
       if (t < ti.t0 || t > ti.t1) continue;
@@ -775,8 +799,8 @@ class Player {
     g.globalAlpha = 1;
     if (this.onTime) this.onTime(t, i);
   }
-  draw(src, aspect) {
-    const g = this.g, W = this.W, H = this.H, A = W / H, a = aspect || A;
+  draw(g, src, aspect) {
+    const W = this.W, H = this.H, A = W / H, a = aspect || A;
     if (Math.abs(a - A) > 0.06) {
       let w = W, h = W / a; if (h < H) { h = H; w = H * a; }
       g.save(); g.filter = "blur(16px) brightness(0.55)"; g.drawImage(src, (W - w) / 2, (H - h) / 2, w, h); g.restore();
@@ -794,7 +818,8 @@ R.timeline = {
       <div class="tlwrap"><div><div class="player"><canvas id="pcv"></canvas></div>
         <div class="transport"><button id="pplay" class="pri">${T("▶ Abspielen")}</button><button id="pprev" title="${T("vorheriger Schnitt")}">⏮</button><button id="pnext" title="${T("nächster Schnitt")}">⏭</button><span class="zeit" id="pzeit">0:00</span></div></div>
         <div id="tlinfo"></div></div>
-      <div class="tl"><div class="row" style="padding:8px 10px;border-bottom:1px solid var(--line)"><span class="meta">${T("Zoom")}</span><input type="range" id="tzoom" min="4" max="80" step="1"><span style="flex:1"></span>
+      <div class="tl"><div class="row" style="padding:8px 10px;border-bottom:1px solid var(--line)"><span class="meta">${T("Zoom")}</span><input type="range" id="tzoom" min="4" max="80" step="1">
+        <span class="lab" style="margin-left:14px">${T("Originalton")}</span><span id="tton"></span><span style="flex:1"></span>
         <button id="tneu">${T("Neu planen (🔒 bleibt)")}</button><button id="talles">${T("Alles neu planen")}</button><button id="tfill">${T("Auffüllen")}</button></div>
         <div class="tlscroll" id="tls"><div class="tlinner" id="tli"><div class="ruler" id="trul"></div><div class="shots" id="tsh"></div><canvas class="mus" id="tmus"></canvas><div class="playhead" id="tph"></div></div></div></div>
       <div id="insp"></div>${weiter("export", T("Weiter zum Fertigstellen"))}`;
@@ -823,7 +848,16 @@ R.timeline = {
     if (!pps) { const w = ($("#tls").clientWidth || 900) - 20; pps = Math.max(4, Math.min(80, Math.round(w / TL.dauer * 2.2))); }
     $("#tzoom").value = pps;
     if (SEL && !TL.shots.find(s => s.id === SEL)) SEL = null;
-    this.info(); this.drawTL(); if (SEL) this.inspect(SEL); else $("#insp").innerHTML = "";
+    this.info(); this.tonSchalter(); this.drawTL(); if (SEL) this.inspect(SEL); else $("#insp").innerHTML = "";
+  },
+  tonSchalter() {
+    const el = $("#tton"); if (!el) return;
+    const v = TL.originalton === "aus" ? "aus" : (TL.absenken > 0 ? "leiser" : "dazu");
+    el.innerHTML = seg("tton", [["aus", T("Nur Musik")], ["dazu", T("Stimmung dazu")], ["leiser", T("Stimmung dazu, Musik leiser")]], v);
+    onSeg($('[data-f="tton"]', el), async w => {
+      await api("/api/schnitt", w === "aus" ? {originalton: "aus"} : {originalton: "auto", absenken: w === "leiser" ? 5 : 0});
+      await this.load(); toast(w === "aus" ? T("Nur Musik – der Originalton bleibt überall stumm") : T("Originalton an stimmungsvollen Stellen dazu"));
+    });
   },
   async replan(keep) { await api("/api/plan", {behalten: keep}); await this.load(); toast(T("Neu geplant")); },
   info() {
@@ -850,7 +884,7 @@ R.timeline = {
       d.style.left = s.tl0 * pps + "px"; d.style.width = Math.max(3, (s.tl1 - s.tl0) * pps - 2) + "px";
       d.style.borderTopColor = s.farbe; d.style.backgroundImage = s.bild ? `url(${s.bild})` : "";
       d.title = `${fmt1(s.tl0)} · ${s.name} · ${T`${s.clip} ab ${komma(s.src.toFixed(1))} s`} · ${s.bewegung_text}`;
-      d.innerHTML = `<span class="ico">${s.lock ? "🔒" : ""}${ICO[s.bewegung] || ""}${s.atmo ? "🔊" : ""}</span><span class="lbl">${esc(s.name)}</span>`;
+      d.innerHTML = `<span class="ico">${s.lock ? "🔒" : ""}${ICO[s.bewegung] || ""}${s.atmo ? "🔊" : (s.ton === "aus" ? "🔇" : "")}</span><span class="lbl">${esc(s.name)}</span>`;
       d.dataset.i = i; d.dataset.id = s.id;
       d.onmousedown = e => this.dragStart(e, s, i, d);
       sh.appendChild(d);
@@ -901,7 +935,8 @@ R.timeline = {
       <div class="row" style="margin-top:6px"><span class="meta" id="fsinfo"></span></div>
       <div class="row" style="margin-top:10px"><span class="lab">${T("Länge")}</span>${[1, 2, 3].map(f => `<button data-k="${k0 * f}" class="${s.k === k0 * f ? "pri" : ""}">${f}× (${komma((k0 * f * ul).toFixed(1))} s)</button>`).join("")}<button data-k="${s.k - 1}" ${s.k <= 1 ? "disabled" : ""}>− 1</button><button data-k="${s.k + 1}">+ 1</button>
         <span class="lab" style="margin-left:12px">${T("Reihenfolge")}</span><button data-mv="-1">${T("◀ früher")}</button><button data-mv="1">${T("später ▶")}</button></div>
-      <div class="row" style="margin-top:8px"><button id="ianders">${T("Andere Stelle vorschlagen")}</button><button id="iweg">${T("Entfernen")}</button><button id="ilock">${s.lock ? T("🔓 Entsperren (Automatik darf wieder)") : T("🔒 Sperren")}</button><button id="iclip">${T("Ganzen Clip ansehen")}</button></div></div>`;
+      <div class="row" style="margin-top:10px"><span class="lab">${T("Originalton")}</span>${seg("iton", [["", T("Auto")], ["an", T("An")], ["aus", T("Aus")]], s.ton || "")}<span class="meta" id="itoninfo">${esc(tonText(s))}</span></div>
+      <div class="row" style="margin-top:8px"><button id="ianders">${T("Andere Stelle vorschlagen")}</button><button id="iweg">${T("Entfernen")}</button><button id="iplus">${T("➕ Weiteren Clip danach einfügen")}</button><button id="ilock">${s.lock ? T("🔓 Entsperren (Automatik darf wieder)") : T("🔒 Sperren")}</button><button id="iclip">${T("Ganzen Clip ansehen")}</button></div></div>`;
     const fs = $("#fs"), W = fs.clientWidth, D = cb.dauer, sc = W / D;
     const nimg = Math.max(4, Math.floor(W / 82)), imgs = cb.bilder;
     $(".bilder", fs).innerHTML = imgs.length ? Array.from({length: nimg}, (_, j) => `<img src="${imgs[Math.min(imgs.length - 1, Math.floor((j + .5) / nimg * imgs.length))][1]}">`).join("") : "";
@@ -943,8 +978,46 @@ R.timeline = {
     $("#iweg").onclick = async () => { await api("/api/shot/entfernen", {id: s.id}); SEL = null; await this.load(); toast(T("Entfernt – die Lücke wurde mit einem anderen Schnitt gefüllt")); };
     $("#ilock").onclick = async () => { await api("/api/shot/sperren", {id: s.id, lock: !s.lock}); await this.load(); };
     $("#iclip").onclick = () => vorschauClip(s.clip, s.src);
+    $("#iplus").onclick = async () => {
+      const d = await api("/api/szenenclips?id=" + s.id);
+      const wahl = await clipWahl(d.clips);
+      if (wahl === null) return;
+      const r = await api("/api/shot/einfuegen", {id: s.id, clip: wahl});
+      if (!r.ok) { toast(r.fehler || T("Nicht möglich")); return; }
+      SEL = r.id; await this.load(); toast(T("Eingefügt und gesperrt 🔒 – dafür ist an anderer Stelle ein Schnitt weggefallen"));
+    };
+    onSeg($('[data-f="iton"]', box), async v => {
+      await api("/api/shot/ton", {id: s.id, ton: v}); await this.load();
+      if (v) toast(v === "an" ? T("Originalton an – gesperrt 🔒") : T("Originalton aus – gesperrt 🔒"));
+    });
   }
 };
+
+function clipWahl(clips) {
+  return new Promise(res => {
+    const m = $("#modal"), box = $("#mbox");
+    box.innerHTML = `<p><b>${T("Weiteren Clip aus dieser Szene danach einfügen")}</b><br><span class="meta">${T("Der neue Schnitt kommt direkt hinter den ausgewählten und wird gesperrt. Die Filmlänge bleibt – dafür fällt ein ungesperrter Schnitt einer anderen Szene weg.")}</span></p>
+      <div class="clipwahl">${clips.map(c => `<button data-clip="${esc(c.name)}" ${c.frei ? "" : "disabled"} title="${esc(c.name)}">${c.bild ? `<img src="${c.bild}">` : ""}<b>${esc(c.name)}</b><span class="meta">${esc(c.zeit)} · ${komma(c.dauer)} s · ${c.im_film ? T`${c.im_film}× im Film` : T("noch nicht im Film")}${c.frei ? "" : " · " + T("nichts mehr frei")}</span></button>`).join("")}</div>
+      <div class="weiter"><button data-x="abbr">${T("Abbrechen")}</button><button class="pri" data-x="auto" ${clips.some(c => c.frei) ? "" : "disabled"}>${T("Automatisch wählen")}</button></div>`;
+    m.hidden = false;
+    const fertig = v => { m.hidden = true; res(v); };
+    box.querySelectorAll("[data-clip]").forEach(b => b.onclick = () => fertig(b.dataset.clip));
+    box.querySelector('[data-x="abbr"]').onclick = () => fertig(null);
+    box.querySelector('[data-x="auto"]').onclick = () => fertig("");
+  });
+}
+
+function tonText(s) {
+  const g = (s.ton_info || {}).grund;
+  if (g === "dabei") return (s.ton === "an" ? T("Originalton ist dabei.") : T("Automatisch dabei.")) + (s.ton_info.musik ? " " + T("Achtung: Im Video läuft Musik, sie mischt sich mit deiner Musik.") : "");
+  if (g === "musik") return T("Automatisch nicht dabei: Im Video läuft Musik. Mit „An“ trotzdem dazunehmen.");
+  if (g === "unauffaellig") return s.ton === "an" ? T("Zu leise für den Originalton.") : T("Automatisch nicht dabei: An dieser Stelle wurde nichts Stimmungsvolles erkannt (Lachen, Applaus, Stimmen).");
+  if (g === "kein_ton") return T("Dieses Video hat keinen Ton.");
+  if (g === "aus_clip") return T("Aus: Im Schritt „Videos“ für den ganzen Clip abgeschaltet.");
+  if (g === "aus_schnitt") return T("Aus für diesen Schnitt.");
+  if (g === "aus_gesamt") return T("Oben ist „Nur Musik“ eingestellt.");
+  return "";
+}
 
 /* ── 10 Fertigstellen ──────────────────────────────────────── */
 R.export = {

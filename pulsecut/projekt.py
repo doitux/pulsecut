@@ -860,7 +860,8 @@ class Projekt:
 
     @staticmethod
     def clean_timeline(tl):
-        keep = ("id", "clip", "src", "k", "lock", "szene", "manuell", "score", "bewegung", "bewegung_umsortiert", "t_edit")
+        keep = ("id", "clip", "src", "k", "lock", "szene", "manuell", "score", "bewegung", "bewegung_umsortiert", "t_edit",
+                "ton")
         return [{k: s[k] for k in keep if k in s} for s in tl]
 
     def relayout(self):
@@ -899,9 +900,10 @@ class Projekt:
                           "ueber": bool(s.get("ueber")), "problem": s["id"] in bad,
                           "proxy": f"/media/proxy/{c.hash}.webm", "clipdauer": round(c.dur, 2),
                           "hoch": c.portrait, "aspect": round(c.aspect, 4), "bild": self.thumb(c, s["src"] + s["dur"] / 2),
-                          "atmo": s.get("atmo")})
+                          "atmo": s.get("atmo"), "ton": s.get("ton", "")})
         lay = self.layout_info()
-        return {"shots": shots, "probleme": probs, "differenz": diff, "absenken": self.absenkung_db(), "k": int(self.d["schnitt"].get("k") or 0) or self.k_default(),
+        return {"shots": shots, "probleme": probs, "differenz": diff, "absenken": self.absenkung_db(),
+                "originalton": self.d["schnitt"].get("originalton", "auto"), "k": int(self.d["schnitt"].get("k") or 0) or self.k_default(),
                 "xf": self.xf(), "musik": lay, "warnungen": self.d.get("plan_warnungen", []),
                 "titel": self.titles_info(), "dauer": lay["dauer"] if lay else 0}
 
@@ -1205,6 +1207,62 @@ class Projekt:
             self.save()
             return {"ok": True}
 
+    def szenen_clips(self, sid):
+        """Für „weiteren Clip danach einfügen“: alle Clips der Szene dieses Schnitts, mit freier Stelle oder nicht."""
+        with self.lock:
+            tl, _ = self.relayout()
+            sh = next((s for s in tl if s["id"] == sid), None)
+            if sh is None:
+                raise RuntimeError(_t("Schnitt nicht gefunden"))
+            k = int(self.d["schnitt"].get("k") or 0) or self.k_default()
+            proto = {"id": "neu", "clip": "", "src": 0.0, "dur": self.layout.unit_len() * k, "k": k}
+            out = []
+            for c in self.scene_clips(sh.get("szene")):
+                cand = PL.best_free_window(tl, proto, [c], self.xf(), slack=self._slack(proto))
+                out.append({"name": c.name, "dauer": round(c.dur, 1), "bild": self.thumb(c, (cand[2] + proto["dur"] / 2)
+                                                                                       if cand else c.dur / 2),
+                            "im_film": sum(1 for s in tl if s["clip"] == c.name), "frei": bool(cand),
+                            "zeit": c.start.strftime("%H:%M") if c.start else ""})
+            return {"szene": sh.get("szene"), "clips": out}
+
+    def shot_einfuegen(self, sid, clip=None):
+        """Einen weiteren Ausschnitt aus derselben Szene direkt hinter diesem Schnitt einfügen (gesperrt). Platz dafür
+        machen ungesperrte Schnitte anderer Szenen (die Szene bekommt also mehr Zeit); die Filmlänge bleibt."""
+        with self.lock:
+            tl, _ = self.relayout()
+            sh = next((s for s in tl if s["id"] == sid), None)
+            if sh is None:
+                raise RuntimeError(_t("Schnitt nicht gefunden"))
+            zid = sh.get("szene")
+            clips = self.scene_clips(zid)
+            if clip:
+                clips = [c for c in clips if c.name == clip]
+            k = int(self.d["schnitt"].get("k") or 0) or self.k_default()
+            proto = {"id": "neu", "clip": "", "src": 0.0, "dur": self.layout.unit_len() * k, "k": k}
+            cand = PL.best_free_window(tl, proto, clips, self.xf(), slack=self._slack(proto))
+            if not cand:
+                return {"ok": False, "fehler": _t("In diesem Clip ist keine freie Stelle mehr.") if clip
+                        else _t("In dieser Szene ist keine freie Stelle mehr.")}
+            new = {"id": PL.new_id(), "clip": cand[1], "src": round(cand[2], 3), "k": k, "lock": True, "manuell": True,
+                   "szene": zid, "t_edit": time.time()}
+            tl.insert(tl.index(sh) + 1, new)
+            sh["lock"] = True        # der Schnitt davor bleibt mit stehen – die beiden gehören jetzt zusammen
+            delta = sum(int(s["k"]) for s in tl) - (len(self.layout.units) - 1)
+            if delta > 0:
+                cand_rm = sorted([s for s in tl if s is not new and s is not sh and not s.get("lock")],
+                                 key=lambda s: (s.get("szene") == zid, s.get("score", 0)))
+                for s in cand_rm:
+                    if delta <= 0:
+                        break
+                    tl.remove(s)
+                    delta -= int(s["k"])
+            if delta < 0:
+                self._fill(tl, settle=False)
+            self.settle(tl)
+            self.d["timeline"] = self.clean_timeline(tl)
+            self.save()
+            return {"ok": True, "id": new["id"]}
+
     def shot_entfernen(self, sid, sperren_stelle=True):
         with self.lock:
             tl, _ = self.relayout()
@@ -1305,14 +1363,20 @@ class Projekt:
         mode = self.d["schnitt"].get("originalton", "auto")
         for s in shots:
             s["atmo"] = None
+            s["ton_info"] = {"grund": "aus_gesamt"} if mode == "aus" else {}
         if mode == "aus":
             return 0
         cl = self.clip_by_name()
+
+        def want(s):
+            """Originalton für diesen Schnitt: Schnitt-Einstellung (Timeline) vor Clip-Einstellung (Videos)."""
+            return s.get("ton") or cl[s["clip"]].ton or ""
         info = {}
         for s in shots:
             c = cl[s["clip"]]
-            if c.ton == "aus":
+            if want(s) == "aus":
                 info[s["id"]] = None
+                s["ton_info"] = {"grund": "aus_schnitt" if s.get("ton") == "aus" else "aus_clip"}
                 continue
             kt = self.cache["ton"].get(c.key)
             w = audio_window(c, s["src"], s["src"] + s["dur"], kt)
@@ -1320,6 +1384,10 @@ class Projekt:
                 rand = audio_window(c, s["src"] - self.MUSIK_RAND, s["src"] + s["dur"] + self.MUSIK_RAND, kt)
                 w["musik"] = max(w["musik"], rand["musik"] if rand else 0.0)
             info[s["id"]] = w
+            if not w:
+                s["ton_info"] = {"grund": "kein_ton"}
+            elif w["musik"] >= 0.35:
+                s["ton_info"] = {"grund": "musik"}
         cands = []
         groups = []
         for s in shots:
@@ -1328,13 +1396,15 @@ class Projekt:
             else:
                 groups.append([s])
         for g in groups:
-            el = [s for s in g if info[s["id"]] and info[s["id"]]["musik"] < 0.35 and info[s["id"]]["db"] >= -50]
+            # „an“ im Schnitt (Timeline) gilt auch, wo im Video Musik läuft – das ist dann deine Entscheidung
+            el = [s for s in g if info[s["id"]] and (s.get("ton") == "an"
+                                                      or (info[s["id"]]["musik"] < 0.35 and info[s["id"]]["db"] >= -50))]
             if not el:
                 continue
             score = max(info[s["id"]]["ereignis"] for s in el)
-            forced = any(cl[s["clip"]].ton == "an" for s in el)
+            forced = any(want(s) == "an" for s in el)
             if forced:
-                el = [s for s in el if cl[s["clip"]].ton == "an" or info[s["id"]]["ereignis"] >= 0.4]
+                el = [s for s in el if want(s) == "an" or info[s["id"]]["ereignis"] >= 0.4]
             if score >= 0.4 or forced:
                 cands.append((score + (10.0 if forced else 0.0), el))
         cands.sort(key=lambda x: -x[0])
@@ -1345,7 +1415,30 @@ class Projekt:
             for s, gn in zip(el, gains):
                 s["atmo"] = {"gain_db": round(float(np.clip(gn, gm - 3, gm + 3)), 1), "gruppe": sid,
                              "art": info[s["id"]]["art"]}
+        for s in shots:
+            if s["atmo"]:
+                s["ton_info"] = {"grund": "dabei", "musik": bool(info[s["id"]]["musik"] >= 0.35)}
+            elif not s["ton_info"]:
+                s["ton_info"] = {"grund": "unauffaellig"}
         return len(cands[:limit])
+
+    def shot_ton(self, sid, ton):
+        """Originalton eines einzelnen Schnitts: "" automatisch, "an", "aus". Wird gesperrt (bleibt beim Neuplanen)."""
+        ton = ton if ton in ("an", "aus") else ""
+        with self.lock:
+            tl, _ = self.relayout()
+            sh = next((s for s in tl if s["id"] == sid), None)
+            if sh is None:
+                return {"ok": False}
+            if ton:
+                sh["ton"] = ton
+                sh["lock"] = True
+                sh["t_edit"] = time.time()
+            else:
+                sh.pop("ton", None)
+            self.d["timeline"] = self.clean_timeline(tl)
+            self.save()
+            return {"ok": True}
 
     def absenkung_db(self):
         """Wie weit die Musik unter dem Originalton leiser wird (0 = gar nicht)."""
