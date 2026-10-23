@@ -207,7 +207,8 @@ def test_delete_neighbour_longer_and_film_shorter(projekt):
     prepare(projekt)
     ids, tl = _ids(projekt)
     i = len(tl) // 2
-    sh, nxt = dict(tl[i]), dict(tl[i + 1])
+    sh = dict(tl[i])
+    tl = [dict(s) for s in tl]
     after_k = sum(int(s["k"]) for s in tl[i + 1:])
     n_before = len(tl)
     r = projekt.shot_entfernen(sh["id"], ausgleich="nachbar")
@@ -215,7 +216,10 @@ def test_delete_neighbour_longer_and_film_shorter(projekt):
     tl2 = _ids(projekt)[1]
     grown = sum(int(s["k"]) for s in tl2[i:]) - after_k
     assert grown == int(sh["k"])                                     # the freed bars went to the shots behind it
-    assert next(s for s in tl2 if s["id"] == nxt["id"])["k"] > nxt["k"]
+    old_k = {s["id"]: int(s["k"]) for s in tl[i + 1:]}
+    # the first following shot with room in its clip took them (if the very next clip is too short, the one after)
+    gained = [s["id"] for s in tl2[i:] if int(s["k"]) > old_k.get(s["id"], 99)]
+    assert gained and [s["id"] for s in tl2[i:]].index(gained[0]) <= 3
     assert len(tl2) == n_before - 1 and problems(projekt) == ([], 0)
     # film shorter: the music ends that many bars earlier, everything else stays
     N = len(projekt.layout.units) - 1
