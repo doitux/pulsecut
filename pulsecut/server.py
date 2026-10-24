@@ -366,6 +366,9 @@ def api_post(path, b, raw=None, ctype=""):
             for k in ("groesse", "groesse_unter"):
                 if k in b["titelstil"]:
                     ts[k] = int(np.clip(float(b["titelstil"][k] or 100), *TI_GROESSE))
+            for k in ("fett", "fett_unter"):
+                if k in b["titelstil"]:
+                    ts[k] = bool(b["titelstil"][k])
             if ts["stil"] not in STILE:
                 ts["stil"] = STANDARD["stil"]
             s["titelstil"] = ts

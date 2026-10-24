@@ -30,7 +30,7 @@ STILE = {
     "verlauf": ("Kino", "Cinema", "dunkler Verlauf von unten, große Schrift", "dark gradient from below, large text"),
 }
 STANDARD = {"stil": "band", "schrift": "", "farbe": "#ffc23d", "position": "unten", "groesse": 100,
-            "groesse_unter": 100}
+            "groesse_unter": 100, "fett": True, "fett_unter": False}
 GROESSE = (50, 200)   # Schriftgröße in Prozent der Standardgröße
 
 # schöne Schriften, die oft installiert sind (es werden nur vorhandene angeboten)
@@ -176,7 +176,7 @@ def render(text, unter, W, H, stil=None, art="titel", tmpdir="/tmp"):
     gu = float(np.clip(float(st.get("groesse_unter") or 100), *GROESSE)) / 100
     main = (60 if art == "abspann" else 92) * sc * (1.25 if sid == "verlauf" and art == "titel" else 1.0) * g
     sub = 46 * sc * gu
-    lines = [(text, main, True)] + ([(unter, sub, False)] if unter else [])
+    lines = [(text, main, bool(st.get("fett", True)))] + ([(unter, sub, bool(st.get("fett_unter", False)))] if unter else [])
     block_h = main * 1.32 + (sub * 1.25 if unter else 0)
     mitte = st.get("position") == "mitte" or art == "abspann"
     cy = H * (0.5 if mitte else (0.70 if hoch else 0.75))

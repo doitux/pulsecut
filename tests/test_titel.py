@@ -68,3 +68,10 @@ def test_font_sizes(tmp_path):
                      {"stil": "klar", "groesse": 200}, "titel", tmp_path)
     w, _ = _text_ausdehnung(lang)
     assert w <= 960 * 0.93
+
+
+def test_bold_or_not(tmp_path):
+    fett = TI.render("Freizeit 2026", "Sommer", 960, 540, {"stil": "klar", "fett": True, "fett_unter": True}, "titel", tmp_path)
+    duenn = TI.render("Freizeit 2026", "Sommer", 960, 540, {"stil": "klar", "fett": False, "fett_unter": False}, "titel", tmp_path)
+    ink = lambda a: int((a[..., 3] > 200).sum())   # noqa: E731
+    assert ink(fett) > ink(duenn) * 1.1

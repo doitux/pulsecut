@@ -243,7 +243,11 @@ def test_workflow(app):
         pg.eval_on_selector("#sgru", "e=>{e.value=80;e.dispatchEvent(new Event('change'))}")
         pg.wait_for_timeout(800)
         akt = pg.evaluate("fetch('/api/titelstile').then(r=>r.json())")["aktuell"]
-        assert akt["groesse"] == 140 and akt["groesse_unter"] == 80
+        assert akt["groesse"] == 140 and akt["groesse_unter"] == 80 and akt["fett"] is True
+        with pg.expect_response(lambda r: "/api/schnitt" in r.url):
+            pg.click("#sfett")
+        pg.wait_for_timeout(300)
+        assert pg.evaluate("fetch('/api/titelstile').then(r=>r.json())")["aktuell"]["fett"] is False
         pg.fill("#sabs", "Thanks!" if lang == "en" else "Danke!")
         pg.dispatch_event("#sabs", "change")
         pg.wait_for_timeout(300)

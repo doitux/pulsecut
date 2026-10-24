@@ -11,6 +11,7 @@ function T(s, ...v) {
   return v.length ? out.replace(/\{(\d+)\}/g, (_, i) => v[+i]) : out;
 }
 const EN = {
+ "Fett": "Bold",
  "Schriftgröße": "Font size",
  "Standardgröße": "Default size",
  "Die Größe des Titels gilt auch für den Abspann. Wird ein langer Titel breiter als das Bild, verkleinert Pulsecut ihn von selbst.": "The title size also applies to the end credits. If a long title gets wider than the picture, Pulsecut makes it smaller by itself.",

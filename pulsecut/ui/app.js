@@ -649,6 +649,8 @@ R.schnitt = {
         <div class="row"><span class="lab">${T("Schriftgröße")}</span><span class="meta">${T("Titel")}</span><input type="range" id="sgr" min="50" max="200" step="5" value="${(s.titelstil || {}).groesse || 100}"><span class="meta" id="sgrv"></span>
           <span class="meta" style="margin-left:12px">${T("Untertitel")}</span><input type="range" id="sgru" min="50" max="200" step="5" value="${(s.titelstil || {}).groesse_unter || 100}"><span class="meta" id="sgruv"></span>
           <button id="sgr0" title="${T("Standardgröße")}">↺</button></div>
+        <div class="row"><span class="lab">${T("Fett")}</span><label><input type="checkbox" id="sfett" ${(s.titelstil || {}).fett === false ? "" : "checked"}> ${T("Titel")}</label>
+          <label style="margin-left:12px"><input type="checkbox" id="sfettu" ${(s.titelstil || {}).fett_unter ? "checked" : ""}> ${T("Untertitel")}</label></div>
         <div class="meta" style="margin-left:96px">${T("Die Größe des Titels gilt auch für den Abspann. Wird ein langer Titel breiter als das Bild, verkleinert Pulsecut ihn von selbst.")}</div></div>
       ${Z.projekt.timeline ? `<div class="hinweis">${T("Es gibt schon eine Timeline. „Schnitt erstellen“ plant neu – von dir gesperrte Schnitte (🔒) bleiben erhalten.")}</div>` : ""}
       <div class="weiter"><button class="pri gross" id="splan">${T("Schnitt erstellen")} →</button></div>`;
@@ -672,7 +674,7 @@ R.schnitt = {
 R.schnitt.galerie = async function (first) {
   const box = $("#sgal"); if (!box) return;
   const d = await api("/api/titelstile"), st = d.aktuell;
-  const q = `schrift=${encodeURIComponent(st.schrift || "")}&farbe=${encodeURIComponent(st.farbe || "")}&position=${st.position}&g=${st.groesse || 100}-${st.groesse_unter || 100}&t=${encodeURIComponent(($("#stit") || {}).value || "")}|${encodeURIComponent(($("#sunt") || {}).value || "")}`;
+  const q = `schrift=${encodeURIComponent(st.schrift || "")}&farbe=${encodeURIComponent(st.farbe || "")}&position=${st.position}&g=${st.groesse || 100}-${st.groesse_unter || 100}-${st.fett === false ? 0 : 1}${st.fett_unter ? 1 : 0}&t=${encodeURIComponent(($("#stit") || {}).value || "")}|${encodeURIComponent(($("#sunt") || {}).value || "")}`;
   box.innerHTML = d.stile.map(x => `<button class="stilk ${x.id === st.stil ? "on" : ""}" data-s="${x.id}" title="${esc(x.text)}"><img loading="lazy" src="/media/titelstil/${x.id}.png?${q}" alt=""><span>${esc(x.name)}</span></button>`).join("");
   $$(".stilk", box).forEach(b => b.onclick = async () => { await api("/api/schnitt", {titelstil: {stil: b.dataset.s}}); $$(".stilk", box).forEach(x => x.classList.toggle("on", x === b)); });
   const fb = $("#sfont");
@@ -691,6 +693,7 @@ R.schnitt.galerie = async function (first) {
       $("#" + id).oninput = zeig;
       $("#" + id).onchange = async e => { await api("/api/schnitt", {titelstil: {[k]: +e.target.value}}); this.galerie(); };
     }
+    for (const [id, k] of [["sfett", "fett"], ["sfettu", "fett_unter"]]) $("#" + id).onchange = async e => { await api("/api/schnitt", {titelstil: {[k]: e.target.checked}}); this.galerie(); };
     $("#sgr0").onclick = async () => { $("#sgr").value = 100; $("#sgru").value = 100; zeig(); await api("/api/schnitt", {titelstil: {groesse: 100, groesse_unter: 100}}); this.galerie(); };
   }
 };

@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.0.11 – 2026-10-24
+- Title: bold on or off, separately for title (default: bold) and subtitle (default: regular).
+
 ## 1.0.10 – 2026-10-24
 - Title: the font is chosen from a list that shows every font in itself, with your own title as the sample, and has a
   search field.
