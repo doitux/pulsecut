@@ -1,0 +1,36 @@
+name: Clean up old releases
+
+# Started by hand (Actions → "Clean up old releases" → Run workflow). Deletes all GitHub releases (with their
+# AppImages) older than the given version. Git tags stay, so the code of every version remains in the repository.
+on:
+  workflow_dispatch:
+    inputs:
+      keep_from:
+        description: "Keep this version and newer (e.g. 1.0.10)"
+        required: true
+        default: "1.0.10"
+
+permissions:
+  contents: write
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Delete older releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+          KEEP: ${{ inputs.keep_from }}
+        run: |
+          set -euo pipefail
+          keep="${KEEP#v}"
+          gh release list --repo "$GITHUB_REPOSITORY" --limit 200 --json tagName --jq '.[].tagName' |
+          while read -r tag; do
+            v="${tag#v}"
+            if [ "$v" != "$keep" ] && [ "$(printf '%s\n%s\n' "$v" "$keep" | sort -V | head -1)" = "$v" ]; then
+              echo "delete $tag"
+              gh release delete "$tag" --repo "$GITHUB_REPOSITORY" --yes
+            else
+              echo "keep   $tag"
+            fi
+          done
