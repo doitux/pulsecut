@@ -48,7 +48,8 @@ footage shows children.
    Everything you change is locked and survives re-planning; a “finished up to here” line protects the part you have
    already worked through, and the timeline tells you when the shares of the categories drift away from the plan.
 9. **Title and credits** in 12 styles (band, card, glass, lines, frame, lower third, highlighter, glow, outline,
-   cinema …) with any installed font and an accent colour – chosen from a gallery rendered on your own footage.
+   cinema …) with any installed font (picked from a list that shows each font with your title), font sizes for title and
+   subtitle, and an accent colour – chosen from a gallery rendered on your own footage.
 10. **Original sound.** Three options: *music only*; *atmosphere added, music stays*; *atmosphere added, music
    quieter*. Laughter, applause, cheering, voices and crowd sounds are detected and faded in and out softly – but
    never where music can be heard in the video (rehearsals, concerts). Per clip the sound can be set to on or off.

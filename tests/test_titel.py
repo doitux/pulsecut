@@ -40,3 +40,31 @@ def test_style_in_export_and_preview(projekt, tmp_path):
     assert len(pngs) == 2 and all(p.exists() for p, _, _ in pngs)
     g = projekt.stil_galerie("marker", "", "#ff3366")
     assert g.exists() and g.stat().st_size > 1000
+
+
+def _hoehe(rgba):
+    rows = (rgba[..., 3] > 20).any(axis=1).nonzero()[0]
+    return rows[-1] - rows[0] if len(rows) else 0
+
+
+def _text_ausdehnung(rgba):
+    import numpy as np
+    m = rgba[..., 3] > 200
+    cols, rows = np.where(m.any(axis=0))[0], np.where(m.any(axis=1))[0]
+    return (cols[-1] - cols[0], rows[-1] - rows[0]) if len(cols) else (0, 0)
+
+
+def test_font_sizes(tmp_path):
+    """Title and subtitle size can be set; a title that would be wider than the picture shrinks to fit."""
+    klein = TI.render("Freizeit", "Sommer 2026", 960, 540, {"stil": "klar", "groesse": 60, "groesse_unter": 60}, "titel", tmp_path)
+    gross = TI.render("Freizeit", "Sommer 2026", 960, 540, {"stil": "klar", "groesse": 160, "groesse_unter": 60}, "titel", tmp_path)
+    unter = TI.render("Freizeit", "Sommer 2026", 960, 540, {"stil": "klar", "groesse": 60, "groesse_unter": 160}, "titel", tmp_path)
+    wk, hk = _text_ausdehnung(klein)
+    wg, hg = _text_ausdehnung(gross)
+    wu, hu = _text_ausdehnung(unter)
+    assert wg > wk * 1.8 and hg > hk * 1.3
+    assert hu > hk * 1.2
+    lang = TI.render("Ein sehr sehr langer Titel für die Musizierfreizeit", "", 960, 540,
+                     {"stil": "klar", "groesse": 200}, "titel", tmp_path)
+    w, _ = _text_ausdehnung(lang)
+    assert w <= 960 * 0.93

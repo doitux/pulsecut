@@ -643,9 +643,13 @@ R.schnitt = {
         <div class="row"><span class="lab">${T("Untertitel")}</span><input type="text" id="sunt" value="${esc(s.untertitel)}" style="flex:1"></div>
         <div class="row"><span class="lab">${T("Abspann")}</span><input type="text" id="sabs" value="${esc(s.abspann)}" style="flex:1" placeholder="${T("z. B. Danke an alle!")}"></div>
         <div class="row" style="align-items:flex-start"><span class="lab">${T("Gestaltung")}</span><div class="stilgalerie" id="sgal">${T("Lade …")}</div></div>
-        <div class="row"><span class="lab">${T("Schrift")}</span><select id="sfont"></select>
+        <div class="row"><span class="lab">${T("Schrift")}</span><button id="sfont" class="schriftknopf">${T("Standard")}</button>
           <span class="lab" style="margin-left:12px">${T("Akzentfarbe")}</span><input type="color" id="sfarbe" value="${esc((s.titelstil || {}).farbe || "#ffc23d")}">
-          <span class="lab" style="margin-left:12px">${T("Lage")}</span>${seg("spos", [["unten", T("unten")], ["mitte", T("Mitte")]], (s.titelstil || {}).position || "unten")}</div></div>
+          <span class="lab" style="margin-left:12px">${T("Lage")}</span>${seg("spos", [["unten", T("unten")], ["mitte", T("Mitte")]], (s.titelstil || {}).position || "unten")}</div>
+        <div class="row"><span class="lab">${T("Schriftgröße")}</span><span class="meta">${T("Titel")}</span><input type="range" id="sgr" min="50" max="200" step="5" value="${(s.titelstil || {}).groesse || 100}"><span class="meta" id="sgrv"></span>
+          <span class="meta" style="margin-left:12px">${T("Untertitel")}</span><input type="range" id="sgru" min="50" max="200" step="5" value="${(s.titelstil || {}).groesse_unter || 100}"><span class="meta" id="sgruv"></span>
+          <button id="sgr0" title="${T("Standardgröße")}">↺</button></div>
+        <div class="meta" style="margin-left:96px">${T("Die Größe des Titels gilt auch für den Abspann. Wird ein langer Titel breiter als das Bild, verkleinert Pulsecut ihn von selbst.")}</div></div>
       ${Z.projekt.timeline ? `<div class="hinweis">${T("Es gibt schon eine Timeline. „Schnitt erstellen“ plant neu – von dir gesperrte Schnitte (🔒) bleiben erhalten.")}</div>` : ""}
       <div class="weiter"><button class="pri gross" id="splan">${T("Schnitt erstellen")} →</button></div>`;
     const save = async b => { await api("/api/schnitt", b); };
@@ -668,19 +672,47 @@ R.schnitt = {
 R.schnitt.galerie = async function (first) {
   const box = $("#sgal"); if (!box) return;
   const d = await api("/api/titelstile"), st = d.aktuell;
-  const q = `schrift=${encodeURIComponent(st.schrift || "")}&farbe=${encodeURIComponent(st.farbe || "")}&position=${st.position}&t=${encodeURIComponent(($("#stit") || {}).value || "")}|${encodeURIComponent(($("#sunt") || {}).value || "")}`;
+  const q = `schrift=${encodeURIComponent(st.schrift || "")}&farbe=${encodeURIComponent(st.farbe || "")}&position=${st.position}&g=${st.groesse || 100}-${st.groesse_unter || 100}&t=${encodeURIComponent(($("#stit") || {}).value || "")}|${encodeURIComponent(($("#sunt") || {}).value || "")}`;
   box.innerHTML = d.stile.map(x => `<button class="stilk ${x.id === st.stil ? "on" : ""}" data-s="${x.id}" title="${esc(x.text)}"><img loading="lazy" src="/media/titelstil/${x.id}.png?${q}" alt=""><span>${esc(x.name)}</span></button>`).join("");
   $$(".stilk", box).forEach(b => b.onclick = async () => { await api("/api/schnitt", {titelstil: {stil: b.dataset.s}}); $$(".stilk", box).forEach(x => x.classList.toggle("on", x === b)); });
-  const sel = $("#sfont");
-  if (first && sel) {
-    const o = f => `<option value="${esc(f)}" ${f === st.schrift ? "selected" : ""}>${esc(f)}</option>`;
-    sel.innerHTML = `<option value="">${T("Standard")}</option>` + (d.schriften.empfohlen.length ? `<optgroup label="${T("Empfohlen")}">${d.schriften.empfohlen.map(o).join("")}</optgroup>` : "") +
-      (d.schriften.weitere.length ? `<optgroup label="${T("Weitere Schriften")}">${d.schriften.weitere.map(o).join("")}</optgroup>` : "");
-    sel.onchange = async () => { await api("/api/schnitt", {titelstil: {schrift: sel.value}}); this.galerie(); };
+  const fb = $("#sfont");
+  if (fb) { fb.textContent = st.schrift || T("Standard"); fb.style.fontFamily = st.schrift ? `'${st.schrift}'` : ""; }
+  if (first && fb) {
+    fb.onclick = async () => {
+      const f = await schriftWahl(d.schriften, st.schrift || "", ($("#stit") || {}).value || "");
+      if (f === null) return;
+      await api("/api/schnitt", {titelstil: {schrift: f}}); st.schrift = f; this.galerie();
+    };
     $("#sfarbe").onchange = async e => { await api("/api/schnitt", {titelstil: {farbe: e.target.value}}); this.galerie(); };
     onSeg($('[data-f="spos"]'), async v => { await api("/api/schnitt", {titelstil: {position: v}}); $$('[data-f="spos"] button').forEach(b => b.classList.toggle("on", b.dataset.v === v)); this.galerie(); });
+    const zeig = () => { $("#sgrv").textContent = $("#sgr").value + " %"; $("#sgruv").textContent = $("#sgru").value + " %"; };
+    zeig();
+    for (const [id, k] of [["sgr", "groesse"], ["sgru", "groesse_unter"]]) {
+      $("#" + id).oninput = zeig;
+      $("#" + id).onchange = async e => { await api("/api/schnitt", {titelstil: {[k]: +e.target.value}}); this.galerie(); };
+    }
+    $("#sgr0").onclick = async () => { $("#sgr").value = 100; $("#sgru").value = 100; zeig(); await api("/api/schnitt", {titelstil: {groesse: 100, groesse_unter: 100}}); this.galerie(); };
   }
 };
+
+function schriftWahl(sch, aktuell, probe) {
+  // jede Schrift in sich selbst gezeigt, mit deinem Titel als Probe (das Programm nutzt die installierten Schriften)
+  probe = probe || T("Sommerfreizeit 2026");
+  const zeile = f => `<button class="schrift ${f === aktuell ? "on" : ""}" data-f="${esc(f)}"><span class="sname">${esc(f || T("Standard"))}</span><span class="sprobe" style="font-family:${f ? `'${esc(f)}'` : "inherit"}">${esc(probe)}</span></button>`;
+  return new Promise(res => {
+    const m = $("#modal"), box = $("#mbox");
+    box.innerHTML = `<p><b>${T("Schrift wählen")}</b></p><input type="search" id="sfsuch" placeholder="${T("Suchen …")}" style="width:100%">
+      <div class="schriftliste">${zeile("")}${sch.empfohlen.length ? `<div class="sgrp">${T("Empfohlen")}</div>` + sch.empfohlen.map(zeile).join("") : ""}${sch.weitere.length ? `<div class="sgrp">${T("Weitere Schriften")}</div>` + sch.weitere.map(zeile).join("") : ""}</div>
+      <div class="weiter"><button data-x="abbr">${T("Abbrechen")}</button></div>`;
+    m.hidden = false;
+    const fertig = v => { m.hidden = true; res(v); };
+    box.querySelectorAll(".schrift").forEach(b => b.onclick = () => fertig(b.dataset.f));
+    box.querySelector('[data-x="abbr"]').onclick = () => fertig(null);
+    const su = $("#sfsuch"); su.focus();
+    su.oninput = () => { const q = su.value.toLowerCase(); box.querySelectorAll(".schrift").forEach(b => { b.hidden = q && !b.dataset.f.toLowerCase().includes(q); }); };
+    const on = box.querySelector(".schrift.on"); if (on) on.scrollIntoView({block: "center"});
+  });
+}
 
 /* ── 9 Timeline & Live-Vorschau ────────────────────────────── */
 class Player {

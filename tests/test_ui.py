@@ -226,6 +226,24 @@ def test_workflow(app):
         pg.click(".stilk[data-s=karte]")
         pg.wait_for_selector(".stilk.on[data-s=karte]")
         assert pg.evaluate("fetch('/api/titelstile').then(r=>r.json())")["aktuell"]["stil"] == "karte"
+        # font picker (each font shown in itself) and font sizes
+        pg.click("#sfont")
+        pg.wait_for_selector(".schriftliste .schrift")
+        n_fonts = len(pg.query_selector_all(".schriftliste .schrift"))
+        if n_fonts > 1:
+            fam = pg.get_attribute(".schriftliste .schrift:nth-of-type(2)", "data-f") or \
+                pg.eval_on_selector_all(".schriftliste .schrift", "e=>e[1].dataset.f")
+            with pg.expect_response(lambda r: "/api/schnitt" in r.url):
+                pg.eval_on_selector_all(".schriftliste .schrift", "e=>e[1].click()")
+            pg.wait_for_timeout(500)
+            assert pg.evaluate("fetch('/api/titelstile').then(r=>r.json())")["aktuell"]["schrift"] == fam
+        else:
+            pg.click("#modal [data-x=abbr]")
+        pg.eval_on_selector("#sgr", "e=>{e.value=140;e.dispatchEvent(new Event('change'))}")
+        pg.eval_on_selector("#sgru", "e=>{e.value=80;e.dispatchEvent(new Event('change'))}")
+        pg.wait_for_timeout(800)
+        akt = pg.evaluate("fetch('/api/titelstile').then(r=>r.json())")["aktuell"]
+        assert akt["groesse"] == 140 and akt["groesse_unter"] == 80
         pg.fill("#sabs", "Thanks!" if lang == "en" else "Danke!")
         pg.dispatch_event("#sabs", "change")
         pg.wait_for_timeout(300)

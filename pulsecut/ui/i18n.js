@@ -11,6 +11,12 @@ function T(s, ...v) {
   return v.length ? out.replace(/\{(\d+)\}/g, (_, i) => v[+i]) : out;
 }
 const EN = {
+ "Schriftgröße": "Font size",
+ "Standardgröße": "Default size",
+ "Die Größe des Titels gilt auch für den Abspann. Wird ein langer Titel breiter als das Bild, verkleinert Pulsecut ihn von selbst.": "The title size also applies to the end credits. If a long title gets wider than the picture, Pulsecut makes it smaller by itself.",
+ "Sommerfreizeit 2026": "Summer camp 2026",
+ "Schrift wählen": "Choose a font",
+ "Suchen …": "Search …",
  "Entfernt – der Film ist entsprechend kürzer, die Musik blendet am Ende aus": "Removed – the film is shorter accordingly, the music fades out at the end",
  "Entfernt – die Schnitte dahinter sind nachgerückt, der nächste ist länger": "Removed – the shots behind it moved up, the next one is longer",
  "Entfernt – die Schnitte dahinter sind nachgerückt, die Takte sind auf die Kategorien dahinter verteilt": "Removed – the shots behind it moved up, the bars went to the categories after it",

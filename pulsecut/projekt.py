@@ -37,7 +37,8 @@ def default_data(name, videos, musik):
             "beschreibung": "", "stichworte": [], "abgelehnt": [], "szenen": {}, "szenen_folge": None,
             "schnitt": {"k": 0, "raster": "takt", "uebergang": "hart", "blende": 0.5, "bewegung": False,
                         "originalton": "auto", "absenken": 5, "titel": name, "untertitel": "", "abspann": "",
-                        "titelstil": {"stil": "band", "schrift": "", "farbe": "#ffc23d", "position": "unten"}},
+                        "titelstil": {"stil": "band", "schrift": "", "farbe": "#ffc23d", "position": "unten",
+                                      "groesse": 100, "groesse_unter": 100}},
             "timeline": None, "erledigt": []}
 
 
@@ -1226,7 +1227,9 @@ class Projekt:
         from . import titel as TI
         from .util import run as _run, write_png
         s = self.d["schnitt"]
-        stil = {"stil": sid, "schrift": schrift, "farbe": farbe or TI.STANDARD["farbe"], "position": position}
+        akt = self.titelstil()
+        stil = {"stil": sid, "schrift": schrift, "farbe": farbe or TI.STANDARD["farbe"], "position": position,
+                "groesse": akt.get("groesse", 100), "groesse_unter": akt.get("groesse_unter", 100)}
         key = md5(json.dumps([stil, s.get("titel"), s.get("untertitel"), W, H], sort_keys=True))[:12]
         out = self.dirs["titel"] / f"galerie_{key}.png"
         if out.exists():

@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.10 – 2026-10-24
+- Title: the font is chosen from a list that shows every font in itself, with your own title as the sample, and has a
+  search field.
+- Title: **font size** for title and subtitle (50–200 %). The title size also applies to the end credits. A title that
+  would get wider than the picture is made smaller automatically.
+
 ## 1.0.9 – 2026-10-24
 - Timeline: **removing a shot no longer brings in a replacement from the same scene.** The shots behind it move up,
   and you choose where the free bars go: *balance the rest of the film* (new shots for the categories after this

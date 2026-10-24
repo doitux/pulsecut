@@ -29,7 +29,9 @@ STILE = {
     "kontur": ("Kontur", "Outline", "hohle Buchstaben mit Umriss", "hollow letters with an outline"),
     "verlauf": ("Kino", "Cinema", "dunkler Verlauf von unten, große Schrift", "dark gradient from below, large text"),
 }
-STANDARD = {"stil": "band", "schrift": "", "farbe": "#ffc23d", "position": "unten"}
+STANDARD = {"stil": "band", "schrift": "", "farbe": "#ffc23d", "position": "unten", "groesse": 100,
+            "groesse_unter": 100}
+GROESSE = (50, 200)   # Schriftgröße in Prozent der Standardgröße
 
 # schöne Schriften, die oft installiert sind (es werden nur vorhandene angeboten)
 EMPFOHLEN = ["Noto Sans", "Inter", "Ubuntu", "Cantarell", "Open Sans", "Roboto", "Lato", "Montserrat", "Raleway",
@@ -170,9 +172,12 @@ def render(text, unter, W, H, stil=None, art="titel", tmpdir="/tmp"):
     acc = _hex(st.get("farbe"))
     hoch = H > W
     sc = (W / 1920) if not hoch else (W / 1080)
-    main = (60 if art == "abspann" else 92) * sc * (1.25 if sid == "verlauf" and art == "titel" else 1.0)
-    lines = [(text, main, True)] + ([(unter, 46 * sc, False)] if unter else [])
-    block_h = main * 1.32 + (46 * sc * 1.25 if unter else 0)
+    g = float(np.clip(float(st.get("groesse") or 100), *GROESSE)) / 100
+    gu = float(np.clip(float(st.get("groesse_unter") or 100), *GROESSE)) / 100
+    main = (60 if art == "abspann" else 92) * sc * (1.25 if sid == "verlauf" and art == "titel" else 1.0) * g
+    sub = 46 * sc * gu
+    lines = [(text, main, True)] + ([(unter, sub, False)] if unter else [])
+    block_h = main * 1.32 + (sub * 1.25 if unter else 0)
     mitte = st.get("position") == "mitte" or art == "abspann"
     cy = H * (0.5 if mitte else (0.70 if hoch else 0.75))
     if sid == "akzent" and not mitte:
@@ -182,8 +187,18 @@ def render(text, unter, W, H, stil=None, art="titel", tmpdir="/tmp"):
     x_mode = int(W * (0.08 if not hoch else 0.07)) + int(28 * sc) if links else "mitte"
     dunkel_schrift = sid in ("hell", "marker")
     color = DUNKEL if dunkel_schrift else "white"
-    trgb, ta, boxes = _text_layer(lines, W, H, st.get("schrift"), x_mode, y_top, color, tmpdir=tmpdir,
-                                  gap=1.62 if sid == "marker" else 1.32)
+    rand = W * (0.84 if links else 0.92)       # größer als das Bild wird nichts: dann passt Pulsecut die Größe an
+    for _ in range(6):
+        trgb, ta, boxes = _text_layer(lines, W, H, st.get("schrift"), x_mode, y_top, color, tmpdir=tmpdir,
+                                      gap=1.62 if sid == "marker" else 1.32)
+        breit = max((b[2] - b[0] for b in boxes), default=0)
+        if breit <= rand:
+            break
+        # ragt der Text übers Bild hinaus, ist er abgeschnitten und eigentlich noch breiter: dann kräftiger verkleinern
+        f = rand / breit * 0.98 if max(b[2] for b in boxes) < W - 2 and min(b[0] for b in boxes) > 1 else 0.7
+        lines = [(t, z * f, b) for t, z, b in lines]
+        block_h *= f
+        y_top = cy - block_h / 2
     if not boxes:
         return Bild(W, H).rgba8()
     x0, y0 = min(b[0] for b in boxes), min(b[1] for b in boxes)

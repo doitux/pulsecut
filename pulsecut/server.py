@@ -358,11 +358,14 @@ def api_post(path, b, raw=None, ctype=""):
             if k in b:
                 s[k] = b[k]
         if isinstance(b.get("titelstil"), dict):
-            from .titel import STANDARD, STILE
+            from .titel import GROESSE as TI_GROESSE, STANDARD, STILE
             ts = dict(STANDARD, **(s.get("titelstil") or {}))
             for k in ("stil", "schrift", "farbe", "position"):
                 if k in b["titelstil"]:
                     ts[k] = str(b["titelstil"][k])[:60]
+            for k in ("groesse", "groesse_unter"):
+                if k in b["titelstil"]:
+                    ts[k] = int(np.clip(float(b["titelstil"][k] or 100), *TI_GROESSE))
             if ts["stil"] not in STILE:
                 ts["stil"] = STANDARD["stil"]
             s["titelstil"] = ts
