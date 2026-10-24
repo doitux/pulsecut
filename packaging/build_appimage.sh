@@ -1,11 +1,15 @@
 #!/bin/bash
-# Builds Pulsecut-<version>-x86_64.AppImage
+# Builds Pulsecut-<version>-x86_64.AppImage (or Pulsecut-nightly-<build>-<commit>-x86_64.AppImage)
 #   PY=…/python (with PySide6, numpy, pyinstaller)  UV=…/uv  TOOLS=folder with appimagetool (+ optional runtime-x86_64)
 #   In CI this is called by packaging/ci_build.sh.
 set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"; ROOT="$(dirname "$HERE")"
 OUT="${OUT:-$ROOT/dist}"; WORK="${WORK:-$OUT/build}"
 VERSION=$("$PY" -c "import sys; sys.path.insert(0,'$ROOT'); import pulsecut; print(pulsecut.VERSION)")
+# PULSECUT_BUILD="nightly-<Build>-<Commit>" für Testversionen (Dateiname und Anzeige im Programm), leer für ein Release
+BUILD="${PULSECUT_BUILD:-}"
+printf 'BUILD = "%s"\n' "$BUILD" > "$ROOT/pulsecut/_build.py"
+LABEL="${BUILD:-$VERSION}"
 rm -rf "$WORK" "$OUT/pulsecut" "$OUT/AppDir"; mkdir -p "$OUT"
 TS_UV="$UV" "$PY" -m PyInstaller --noconfirm --clean --log-level WARN --distpath "$OUT" --workpath "$WORK" "$HERE/pulsecut.spec"
 "$PY" "$HERE/prune_qt.py" "$OUT/pulsecut"
@@ -22,5 +26,5 @@ exec "$HERE/usr/lib/pulsecut/pulsecut" "$@"
 RUN
 chmod +x "$A/AppRun"
 RT=(); [ -f "$TOOLS/runtime-x86_64" ] && RT=(--runtime-file "$TOOLS/runtime-x86_64")
-ARCH=x86_64 APPIMAGE_EXTRACT_AND_RUN=1 "$TOOLS/appimagetool" "${RT[@]}" --comp zstd -n "$A" "$OUT/Pulsecut-$VERSION-x86_64.AppImage"
+ARCH=x86_64 APPIMAGE_EXTRACT_AND_RUN=1 "$TOOLS/appimagetool" "${RT[@]}" --comp zstd -n "$A" "$OUT/Pulsecut-$LABEL-x86_64.AppImage"
 ls -la "$OUT"/*.AppImage

@@ -2,7 +2,7 @@
 
 **Turn a pile of phone videos into a recap film that is cut exactly to the beat of your music.**
 
-[Deutsch](README.de.md) · [Download](https://github.com/doitux/pulsecut/releases/latest) · License: GPL-3.0
+[Deutsch](README.de.md) · [Download (test build)](https://github.com/doitux/pulsecut/releases/tag/nightly) · License: GPL-3.0
 
 Pulsecut is a desktop app for Linux. It is made for the long recap film after a camp, a class trip, a club
 weekend, a wedding or a family holiday: several minutes long, made from hundreds of unsorted clips filmed by
@@ -84,8 +84,9 @@ For a quick 30-second reel from your phone, a mobile app is faster. Pulsecut is 
    sudo apt install ffmpeg melt
    ```
 
-2. Download `Pulsecut-<version>-x86_64.AppImage` from the
-   [releases](https://github.com/doitux/pulsecut/releases/latest), make it executable and start it:
+2. Download `Pulsecut-nightly-<build>-<commit>-x86_64.AppImage` from the
+   [nightly test build](https://github.com/doitux/pulsecut/releases/tag/nightly), make it executable and start it. Until the first stable release (1.0.0) there
+   are only these test builds; every change on `main` that passes all tests becomes a new one.
 
    ```bash
    chmod +x Pulsecut-*-x86_64.AppImage
@@ -163,7 +164,10 @@ or `_t("…")` (Python) and add the English version to `pulsecut/ui/i18n.js` or 
 
 **Continuous integration:** every push runs the test suite (including browser tests in both languages and real
 rendering). A separate workflow sets up the real AI environment and runs the recognition with the actual models.
-The Release workflow (started by hand with a tag like `v1.0.0`, or by pushing such a tag) builds the AppImage on Ubuntu 22.04, smoke-tests it including the Qt window and publishes it with a SHA-256 checksum as a GitHub release.
+After all tests pass, every push to `main` builds the AppImage on Ubuntu 22.04, smoke-tests it including the Qt
+window and puts it on the [nightly](https://github.com/doitux/pulsecut/releases/tag/nightly) pre-release as `Pulsecut-nightly-<build>-<commit>-x86_64.AppImage`
+(replacing the previous one). Stable versions are published by the Release workflow (started by hand with a tag like
+`v1.0.0`).
 
 ## License
 

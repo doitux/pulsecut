@@ -13,7 +13,7 @@ from pathlib import Path
 
 import numpy as np
 
-from . import APP_NAME, VERSION
+from . import APP_NAME, VERSION, version_text
 from . import erkennung as ER
 from . import export as EX
 from . import hwdec as HW
@@ -98,7 +98,7 @@ def desktop_eintragen():
 
 def zustand():
     pr = STATE.pr
-    out = {"version": VERSION, "app": APP_NAME, "sprache": get_lang(), "werkzeuge": STATE.tools, "ki": KI.status(),
+    out = {"version": version_text(), "version_nr": VERSION, "app": APP_NAME, "sprache": get_lang(), "werkzeuge": STATE.tools, "ki": KI.status(),
            "zuletzt": recent_projects(), "bridge": STATE.bridge, "projekt": None,
            "appimage": os.environ.get("APPIMAGE"), "desktop": DESKTOP_FILE.exists()}
     if pr:

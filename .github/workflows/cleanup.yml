@@ -1,14 +1,19 @@
 name: Clean up old releases
 
-# Started by hand (Actions → "Clean up old releases" → Run workflow). Deletes all GitHub releases (with their
-# AppImages) older than the given version. Git tags stay, so the code of every version remains in the repository.
+# Started by hand (Actions → "Clean up old releases" → Run workflow). Deletes the GitHub releases (with their
+# AppImages) up to and including the given version, and – if wanted – their v… tags, so that the version number can be
+# used again later. The "nightly" test build is never touched.
 on:
   workflow_dispatch:
     inputs:
-      keep_from:
-        description: "Keep this version and newer (e.g. 1.0.10)"
+      up_to:
+        description: "Delete this version and all older ones (e.g. 1.0.11)"
         required: true
-        default: "1.0.10"
+        default: "1.0.11"
+      tags:
+        description: "Also delete the v… tags (needed to release 1.0.0 again later)"
+        type: boolean
+        default: true
 
 permissions:
   contents: write
@@ -17,20 +22,34 @@ jobs:
   cleanup:
     runs-on: ubuntu-24.04
     steps:
-      - name: Delete older releases
+      - name: Delete old releases and tags
         env:
           GH_TOKEN: ${{ github.token }}
-          KEEP: ${{ inputs.keep_from }}
+          UPTO: ${{ inputs.up_to }}
+          TAGS: ${{ inputs.tags }}
         run: |
           set -euo pipefail
-          keep="${KEEP#v}"
+          upto="${UPTO#v}"
+          old() {   # is version $1 ≤ $upto ?
+            [ "$1" = "$upto" ] || [ "$(printf '%s\n%s\n' "$1" "$upto" | sort -V | head -1)" = "$1" ]
+          }
           gh release list --repo "$GITHUB_REPOSITORY" --limit 200 --json tagName --jq '.[].tagName' |
           while read -r tag; do
             v="${tag#v}"
-            if [ "$v" != "$keep" ] && [ "$(printf '%s\n%s\n' "$v" "$keep" | sort -V | head -1)" = "$v" ]; then
-              echo "delete $tag"
+            if [[ "$tag" == v[0-9]* ]] && old "$v"; then
+              echo "delete release $tag"
               gh release delete "$tag" --repo "$GITHUB_REPOSITORY" --yes
             else
-              echo "keep   $tag"
+              echo "keep   release $tag"
             fi
           done
+          if [ "$TAGS" = "true" ]; then
+            gh api "repos/$GITHUB_REPOSITORY/git/matching-refs/tags/v" --jq '.[].ref' |
+            while read -r ref; do
+              tag="${ref#refs/tags/}"
+              if old "${tag#v}"; then
+                echo "delete tag $tag"
+                gh api -X DELETE "repos/$GITHUB_REPOSITORY/git/$ref"
+              fi
+            done
+          fi

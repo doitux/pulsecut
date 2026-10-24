@@ -91,6 +91,8 @@ jobs:
       - name: Build
         run: |
           set -o pipefail
+          # test builds carry build number and commit: Pulsecut-nightly-<build>-<commit>-x86_64.AppImage
+          export PULSECUT_BUILD="nightly-${GITHUB_RUN_NUMBER}-${GITHUB_SHA::7}"
           packaging/ci_build.sh 2>&1 | tee build.log
       - name: Smoke test (server, whole project, export, Qt window)
         env:
@@ -111,3 +113,26 @@ jobs:
             dist/SHA256SUMS
             dist/window.png
           retention-days: 14
+
+  nightly:
+    name: Publish the nightly test build
+    needs: appimage
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    concurrency:
+      group: nightly-publish
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: .github/scripts
+      - uses: actions/download-artifact@v4
+        with:
+          name: Pulsecut-AppImage
+          path: dist
+      - name: Update the nightly pre-release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash .github/scripts/publish-nightly.sh dist/Pulsecut-nightly-*-x86_64.AppImage dist/SHA256SUMS

@@ -7,7 +7,7 @@ import time
 import webbrowser
 from pathlib import Path
 
-from . import APP_NAME, VERSION
+from . import APP_NAME, version_text
 from .i18n import L as _t
 from .util import resource
 
@@ -119,7 +119,7 @@ def run_qt(url, state):
                 print(f"[js] {msg} ({src}:{line})", flush=True)
 
     win = QMainWindow()
-    win.setWindowTitle(f"{APP_NAME} {VERSION}")
+    win.setWindowTitle(f"{APP_NAME} {version_text()}")
     win.resize(1440, 920)
     view = QWebEngineView(win)
     page = Page(QWebEngineProfile.defaultProfile(), view)
@@ -202,20 +202,20 @@ def run_qt(url, state):
 
 def main():
     from .i18n import set_lang
-    ap = argparse.ArgumentParser(prog="pulsecut", description=f"{APP_NAME} {VERSION} – {_t('Videos auf den Takt schneiden')}")
+    ap = argparse.ArgumentParser(prog="pulsecut", description=f"{APP_NAME} {version_text()} – {_t('Videos auf den Takt schneiden')}")
     ap.add_argument("projekt", nargs="?", help=_t("Projektordner öffnen"))
     ap.add_argument("--browser", action="store_true", help=_t("statt eigenem Fenster den normalen Browser verwenden"))
     ap.add_argument("--port", type=int, default=0, help=_t("Port des lokalen Servers (Standard: frei wählen)"))
     ap.add_argument("--lang", choices=["de", "en"], help=_t("Sprache der Oberfläche"))
     ap.add_argument("--nur-server", action="store_true", help=argparse.SUPPRESS)
-    ap.add_argument("--version", action="version", version=f"{APP_NAME} {VERSION}")
+    ap.add_argument("--version", action="version", version=f"{APP_NAME} {version_text()}")
     args = ap.parse_args()
     if args.lang:
         set_lang(args.lang)
     from .server import STATE, start_server
     from .projekt import Projekt
     srv, url = start_server(args.port)
-    print(f"{APP_NAME} {VERSION} – {url}", flush=True)
+    print(f"{APP_NAME} {version_text()} – {url}", flush=True)
     if args.projekt:
         try:
             STATE.open(Projekt(args.projekt))

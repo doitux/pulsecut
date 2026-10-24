@@ -2,7 +2,7 @@
 
 **Aus einem Haufen Handy-Videos wird ein Rückblick-Film, der genau im Takt deiner Musik geschnitten ist.**
 
-[English](README.md) · [Download](https://github.com/doitux/pulsecut/releases/latest) · Lizenz: GPL-3.0
+[English](README.md) · [Download (Testversion)](https://github.com/doitux/pulsecut/releases/tag/nightly) · Lizenz: GPL-3.0
 
 Pulsecut ist ein Desktop-Programm für Linux. Es ist für den langen Rückblick-Film gedacht: nach einer Freizeit,
 einer Klassenfahrt, einem Vereinswochenende, einer Hochzeit oder dem Familienurlaub. Mehrere Minuten lang, aus
@@ -53,8 +53,9 @@ schnellen Reel vom Handy ist eine Handy-App schneller, für den langen Film ist 
    sudo apt install ffmpeg melt
    ```
 
-2. `Pulsecut-<Version>-x86_64.AppImage` von den
-   [Releases](https://github.com/doitux/pulsecut/releases/latest) herunterladen, ausführbar machen (Dolphin:
+2. `Pulsecut-nightly-<Build>-<Commit>-x86_64.AppImage` von der
+   [Testversion (nightly)](https://github.com/doitux/pulsecut/releases/tag/nightly) herunterladen – bis zum ersten stabilen Release (1.0.0) gibt es nur diese
+   Testversionen, jede Änderung auf `main`, die alle Tests besteht, wird eine neue –, ausführbar machen (Dolphin:
    Rechtsklick → *Eigenschaften* → *Berechtigungen* → *Ausführbar*) und per Doppelklick starten:
 
    ```bash

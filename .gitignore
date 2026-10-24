@@ -5,3 +5,4 @@ __pycache__/
 tests/.data/
 .pytest_cache/
 *.AppImage
+pulsecut/_build.py
