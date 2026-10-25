@@ -146,6 +146,8 @@ def api_get(path, q):
         return videos_info(pr)
     if path == "/api/stichworte":
         return {"stichworte": pr.d["stichworte"], "beschreibung": pr.d.get("beschreibung", "")}
+    if path == "/api/tage":
+        return pr.tage_info()
     if path == "/api/erkennung":
         info = pr.erkennung_info()
         return {"erkennung": info, "stichworte": pr.d["stichworte"]}
@@ -271,10 +273,21 @@ def api_post(path, b, raw=None, ctype=""):
         if ("kat" in b or "prio" in b) and pr.erk is not None:
             pr.compute_erkennung()
         return {}
+    if path == "/api/tage":
+        return pr.tage_setzen(b.get("an"))
+    if path == "/api/tage/teilen":
+        return ER.nach_tagen_teilen(b.get("text", ""), pr.tage_info()["tage"])
     if path == "/api/ablauf":
         text = b.get("text", "")
         pr.d["beschreibung"] = text
-        neu = ER.parse_beschreibung(text, sprache=ER.sprache_des_textes(text, get_lang()))
+        if isinstance(b.get("tage"), list):   # Ablauf je Tag
+            tage = pr.tage_info()["tage"]
+            texte = [str(x or "") for x in b["tage"]][:len(tage)]
+            alle = str(b.get("alle") or "")
+            pr.d["beschreibung_tage"] = {"tage": texte + [""] * (len(tage) - len(texte)), "alle": alle}
+            neu = ER.parse_tage(texte, alle, tage, ER.sprache_des_textes(" ".join(texte + [alle]), get_lang()))
+        else:
+            neu = ER.parse_beschreibung(text, sprache=ER.sprache_des_textes(text, get_lang()))
         if b.get("ergaenzen"):
             have = {k["name"].lower() for k in pr.d["stichworte"]}
             pr.set_stichworte(pr.d["stichworte"] + [k for k in neu if k["name"].lower() not in have])

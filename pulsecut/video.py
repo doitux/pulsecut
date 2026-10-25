@@ -23,6 +23,18 @@ FILENAME_PATTERNS = [
     re.compile(r"(20\d\d)-(\d\d)-(\d\d)[ _T-](\d\d)[\.\-:](\d\d)[\.\-:](\d\d)"),
 ]
 
+def zeit_aus_name(name):
+    """Aufnahmezeit aus dem Dateinamen (VID_20260713_091000.mp4, PXL_…, „2026-07-14 at 21.15.00“) oder None."""
+    for pat in FILENAME_PATTERNS:
+        m = pat.search(name)
+        if m:
+            try:
+                return datetime(*map(int, m.groups()))
+            except ValueError:
+                pass
+    return None
+
+
 BEWEGUNG_LABEL = {"rechts": "Schwenk nach rechts", "links": "Schwenk nach links", "hoch": "Neigung nach oben",
                   "runter": "Neigung nach unten", "rein": "Zoom rein / ran", "raus": "Zoom raus / weg",
                   "ruhig": "ruhig"}
@@ -47,6 +59,7 @@ class Clip:
         self.rot = 0
         self.start = None
         self.time_source = ""
+        self.name_start = zeit_aus_name(self.name)   # zum Gegenprüfen der Aufnahmetage
         self.ana = None
         self.q = None
         self.times = None

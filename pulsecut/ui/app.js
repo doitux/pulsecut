@@ -399,20 +399,66 @@ let SW = null, rec = null;
 R.ablauf = {
   async render(m) {
     m.innerHTML = `<h1>${T("Ablauf beschreiben")}</h1><p class="lead">${T("Beschreib kurz, was in welcher Reihenfolge passiert ist – sprich es ein oder tipp es. Zum Beispiel: <i>„Am Anfang kommen alle mit dem Bus an, dann Anmeldung mit Armbändern. Jeden Tag Proben, zwischendurch Freizeit mit Fußball. Am Mittwoch Ausflug ins Museum, am Ende das Konzert, danach Gruppenfoto und Abreise.“</i> Daraus werden Stichworte, die die KI in den Videos sucht.")}</p>
+      <div id="tagebox"></div>
       <div class="box"><div class="row" style="margin-bottom:8px"><span class="mic"><button id="bmic">${T("🎤 Aufnehmen")}</button><span class="pegel"><b id="pegel"></b></span><span class="meta" id="mtxt"></span></span></div>
       <textarea id="btext" rows="6" placeholder="${T("Ablauf hier eintippen oder einsprechen …")}"></textarea>
+      <div id="tagfelder"></div>
       <div class="row" style="margin-top:8px"><button class="pri" id="bparse">${T("Stichworte daraus machen")}</button><button id="bparse2">${T("Stichworte ergänzen")}</button><span class="meta">${T("„Jeden Tag“, „zwischendurch“, „immer wieder“ → das Stichwort darf mehrmals vorkommen.")}</span></div></div>
       <div class="box"><div class="row"><b>${T("Stichworte")}</b><span class="meta">${T("in der Reihenfolge des Ablaufs – Name kurz, Beschreibung hilft der KI")}</span><span style="flex:1"></span><button id="bneukw">${T("+ Stichwort")}</button></div><div class="kwliste" id="kwl"></div></div>${weiter("erkennung", T("Weiter zur Erkennung"))}`;
     bindWeiter(m);
     SW = await api("/api/stichworte");
+    TG = await api("/api/tage");
     $("#btext").value = SW.beschreibung || "";
+    this.tage();
     this.list();
     $("#bparse").onclick = () => this.parse(false);
     $("#bparse2").onclick = () => this.parse(true);
     $("#bneukw").onclick = () => { SW.stichworte.push({id: "", name: "", text: "", wiederkehrend: false, gewicht: 1}); this.list(); this.save(); };
     $("#bmic").onclick = () => this.mic();
   },
+  nachTagen() { return TG && TG.eindeutig && TG.modus === true; },
+  tage() {
+    // mehrere Aufnahmetage erkannt? Dann fragen, ob die Erkennung danach gehen soll; ja → Ablauf je Tag
+    const box = $("#tagebox"), f = $("#tagfelder"); if (!box || !f) return;
+    if (!TG || !TG.eindeutig) { box.innerHTML = ""; f.innerHTML = ""; return; }
+    const liste = TG.tage.map(t => `<li><b>${esc(t.label)}</b> · ${T`${t.n} Videos`} · ${t.von}–${t.bis}</li>`).join("");
+    const wie = TG.quelle.beide ? T("Erkannt an der Aufnahmezeit (Metadaten) und an den Dateinamen – beides passt zusammen.") : T("Erkannt an der Aufnahmezeit der Videos.");
+    if (TG.modus === null || TG.modus === undefined) {
+      box.innerHTML = `<div class="hinweis"><b>${T`Die Videos stammen von ${TG.tage.length} Tagen:`}</b><ul class="tagliste">${liste}</ul><div class="meta">${wie}</div>
+        <p>${T("Soll die Szenenerkennung die Tage berücksichtigen? Dann beschreibst du den Ablauf je Tag, und z. B. die Proben vom ersten Tag werden nicht mit denen vom letzten Tag verwechselt.")}</p>
+        <div class="row"><button class="pri" id="tja">${T("Ja, nach Tagen")}</button><button id="tnein">${T("Nein, alles zusammen")}</button></div></div>`;
+    } else {
+      box.innerHTML = `<div class="box row"><b>${T`${TG.tage.length} Aufnahmetage`}</b><span class="meta">${TG.tage.map(t => esc(t.kurz)).join(" · ")}</span>${seg("tmod", [["1", T("nach Tagen erkennen")], ["0", T("alles zusammen")]], TG.modus ? "1" : "0")}</div>`;
+      onSeg($('[data-f="tmod"]', box), v => this.tageSetzen(v === "1"));
+    }
+    const b = (id, fn) => { const e = $("#" + id); if (e) e.onclick = fn; };
+    b("tja", () => this.tageSetzen(true)); b("tnein", () => this.tageSetzen(false));
+    if (!this.nachTagen()) { f.innerHTML = ""; $("#btext").placeholder = T("Ablauf hier eintippen oder einsprechen …"); return; }
+    $("#btext").placeholder = T("Ganzen Ablauf hier eintippen oder einsprechen – mit „am ersten Tag“, „am Mittwoch“, „am letzten Tag“ … – und dann auf die Tage verteilen. Oder direkt unten je Tag schreiben.");
+    const tx = TG.texte || {tage: [], alle: ""};
+    f.innerHTML = `<div class="row" style="margin:6px 0 10px"><button id="tverteil">${T("⇣ Auf die Tage verteilen")}</button><span class="meta">${T("Sätze mit „jeden Tag“ oder „täglich“ kommen zu „An allen Tagen“.")}</span></div>
+      ${TG.tage.map((t, i) => `<div class="tagfeld"><div class="lab">${T`Tag ${t.nr}`} · ${esc(t.label)} <span class="meta">(${T`${t.n} Videos`}, ${t.von}–${t.bis})</span></div><textarea rows="2" class="tagtext" data-i="${i}">${esc((tx.tage || [])[i] || "")}</textarea></div>`).join("")}
+      <div class="tagfeld"><div class="lab">${T("An allen Tagen")} <span class="meta">${T("(z. B. Proben, Essen – jeder Tag bekommt dafür ein eigenes Stichwort)")}</span></div><textarea rows="2" id="talle">${esc(tx.alle || "")}</textarea></div>`;
+    $("#tverteil").onclick = () => this.verteilen();
+  },
+  async tageSetzen(an) { TG = Object.assign(TG, await api("/api/tage", {an})); this.tage(); this.list(); },
+  async verteilen(still) {
+    const t = $("#btext").value.trim(); if (!t) { if (!still) toast(T("Bitte erst den ganzen Ablauf oben eintragen.")); return; }
+    const r = await api("/api/tage/teilen", {text: t});
+    $$(".tagtext").forEach((ta, i) => { const x = r.tage[i] || ""; if (x) ta.value = (ta.value.trim() ? ta.value.trim() + " " : "") + x; });
+    if (r.alle) { const a = $("#talle"); a.value = (a.value.trim() ? a.value.trim() + " " : "") + r.alle; }
+    $("#btext").value = "";
+    toast(r.erkannt ? T("Auf die Tage verteilt – bitte prüfen.") : T("Im Text wurde kein Tag genannt – alles steht jetzt beim ersten Tag. Bitte prüfen und verschieben."), 6000);
+  },
   async parse(erg) {
+    if (this.nachTagen()) {
+      if ($("#btext").value.trim()) await this.verteilen(true);
+      const tage = $$(".tagtext").map(ta => ta.value), alle = ($("#talle") || {}).value || "";
+      if (!tage.some(x => x.trim()) && !alle.trim()) return toast(T("Bitte erst den Ablauf beschreiben."));
+      if (!erg && SW.stichworte.length && !(await frage(T("Die bisherigen Stichworte werden ersetzt. Fortfahren?"), T("Ersetzen")))) return;
+      SW = Object.assign(SW, await api("/api/ablauf", {text: "", tage, alle, ergaenzen: erg})); this.list();
+      return;
+    }
     const t = $("#btext").value.trim(); if (!t) return toast(T("Bitte erst den Ablauf beschreiben."));
     if (!erg && SW.stichworte.length && !(await frage(T("Die bisherigen Stichworte werden ersetzt. Fortfahren?"), T("Ersetzen")))) return;
     SW = Object.assign(SW, await api("/api/ablauf", {text: t, ergaenzen: erg})); this.list();
@@ -420,14 +466,23 @@ R.ablauf = {
   list() {
     const l = $("#kwl"); if (!l) return;
     if (!SW.stichworte.length) { l.innerHTML = `<div class="meta" style="padding:8px 0">${T("Noch keine Stichworte.")}</div>`; return; }
-    l.innerHTML = SW.stichworte.map((k, i) => `<div class="kw" data-i="${i}"><span class="szmv"><button data-mv="-1" ${i ? "" : "disabled"}>▲</button><button data-mv="1" ${i < SW.stichworte.length - 1 ? "" : "disabled"}>▼</button></span>
+    const tg = this.nachTagen() ? TG.tage : null;
+    const tagOpt = k => tg ? `<select class="ktag" title="${T("Tag")}">${tg.map(t => `<option value="${t.datum}" ${t.datum === k.tag ? "selected" : ""}>${esc(t.kurz)}</option>`).join("")}${k.tag ? "" : `<option value="" selected>–</option>`}</select>` : "";
+    const kopf = (k, i) => tg && (i === 0 || SW.stichworte[i - 1].tag !== k.tag) ? `<div class="kwtag">${k.tag ? esc((tg.find(t => t.datum === k.tag) || {}).label || k.tag) : T("ohne Tag")}</div>` : "";
+    l.innerHTML = SW.stichworte.map((k, i) => `${kopf(k, i)}<div class="kw" data-i="${i}"><span class="szmv"><button data-mv="-1" ${i ? "" : "disabled"}>▲</button><button data-mv="1" ${i < SW.stichworte.length - 1 ? "" : "disabled"}>▼</button></span>
       <span class="dot" style="background:${KWF[i % KWF.length]}"></span><input type="text" class="kn" value="${esc(k.name)}" placeholder="${T("Name")}"><input type="text" class="kt" value="${esc(k.text)}" placeholder="${T("Was passiert da? (für die KI)")}">
-      <label class="meta" title="${T("kommt mehrmals vor (z. B. jeden Tag)")}"><input type="checkbox" class="kr" ${k.wiederkehrend ? "checked" : ""}> ${T("mehrmals")}</label><button class="klein" data-del>✕</button></div>`).join("");
+      ${tagOpt(k)}<label class="meta" title="${T("kommt mehrmals vor (z. B. jeden Tag)")}"><input type="checkbox" class="kr" ${k.wiederkehrend ? "checked" : ""}> ${T("mehrmals")}</label><button class="klein" data-del>✕</button></div>`).join("");
     $$(".kw", l).forEach(row => {
       const i = +row.dataset.i;
       $(".kn", row).onchange = e => { SW.stichworte[i].name = e.target.value; this.save(); };
       $(".kt", row).onchange = e => { SW.stichworte[i].text = e.target.value; this.save(); };
       $(".kr", row).onchange = e => { SW.stichworte[i].wiederkehrend = e.target.checked; this.save(); };
+      const kt = $(".ktag", row);
+      if (kt) kt.onchange = async e => {   // anderer Tag: ans Ende dieses Tages
+        const [x] = SW.stichworte.splice(i, 1); x.tag = e.target.value;
+        let pos = SW.stichworte.length; for (let j = SW.stichworte.length - 1; j >= 0; j--) if (SW.stichworte[j].tag === x.tag) { pos = j + 1; break; }
+        SW.stichworte.splice(pos, 0, x); await this.save(); this.list();
+      };
       $("[data-del]", row).onclick = () => { SW.stichworte.splice(i, 1); this.list(); this.save(); };
       $$("[data-mv]", row).forEach(b => b.onclick = () => { const d = +b.dataset.mv; const [x] = SW.stichworte.splice(i, 1); SW.stichworte.splice(i + d, 0, x); this.list(); this.save(); });
     });
@@ -458,12 +513,16 @@ R.ablauf = {
     if (n === "sprache" && this.waitText) {
       this.waitText = false; $("#mtxt").textContent = "";
       const t = Z.projekt.sprache_text;
-      if (t) { const ta = $("#btext"); ta.value = (ta.value ? ta.value.trim() + " " : "") + t; toast(T("Text erkannt – prüfen und dann „Stichworte daraus machen“.")); }
+      if (t) {
+        const ta = $("#btext"); ta.value = (ta.value ? ta.value.trim() + " " : "") + t;
+        if (this.nachTagen()) this.verteilen(); else toast(T("Text erkannt – prüfen und dann „Stichworte daraus machen“."));
+      }
     }
   },
   onPoll(z) { const j = z.projekt.jobs.sprache; if (j && j.laeuft && $("#mtxt")) $("#mtxt").textContent = j.text; },
   leave() { if (rec) rec.stop(); }
 };
+let TG = null;
 const KWF = ["#7b68c8", "#e76f51", "#f4a261", "#2a9d8f", "#5e60ce", "#e9c46a", "#d62828", "#3a86ff", "#8ac926", "#ff595e", "#6a4c93", "#1982c4", "#ff924c", "#52b788", "#b5179e", "#4d908e", "#c77dff", "#577590"];
 
 /* ── 6 Szenen erkennen ─────────────────────────────────────── */

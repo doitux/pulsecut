@@ -172,7 +172,9 @@ def parse_beschreibung(text, start_id=1, sprache=None):
 
 
 def kw_text(k):
-    return f"{k['name']}: {k['text']}" if k.get("text") and k["text"] != k["name"] else k["name"]
+    """Text, den die KI mit den Bildern vergleicht (ohne Tagesangabe: „Proben · Di“ → „Proben“)."""
+    name = k.get("basis") or k["name"]
+    return f"{name}: {k['text']}" if k.get("text") and k["text"] != name else name
 
 
 def clip_sims(E, T):
@@ -318,3 +320,162 @@ def rueckfragen(scenes, clip_sim_kw, clip_sim_voc, kw_emb, voc_emb, stichworte, 
                         "staerke": round(v["diff"], 3), "sekunden": round(v["sek"], 1)})
     out.sort(key=lambda x: (-len(x["szenen"]), -x["staerke"]))
     return out[:3]
+
+
+# ═════════════════════════════════════════════ Mehrere Tage
+# Bei Freizeiten, Klassenfahrten oder Urlauben über mehrere Tage gibt es oft an jedem Tag ähnliche Szenen (Proben,
+# Busfahrten). Mit Stichworten je Tag sucht die Erkennung die Proben vom ersten Tag nur in den Videos vom ersten Tag.
+
+TAG_GRENZE_STUNDE = 4    # was bis 4 Uhr morgens aufgenommen wurde, gehört noch zum Vortag (Party, Nachtwanderung)
+SICHERE_QUELLEN = ("Handy-Metadaten", "Metadaten", "Dateiname")
+TAEGLICH = ("jeden tag", "täglich", "an allen tagen", "jeden morgen", "jeden abend", "jeden mittag", "every day",
+            "each day", "daily", "every morning", "every evening", "each morning", "each evening", "every night",
+            "on all days", "on every day")
+
+
+def tag_von(dt):
+    from datetime import timedelta
+    return (dt - timedelta(hours=TAG_GRENZE_STUNDE)).date()
+
+
+def tage_erkennen(clips, max_tage=10):
+    """Über wie viele Tage geht das Material – und ist das sicher? Aufnahmezeit aus den Metadaten und aus dem Dateinamen
+    werden gegeneinander geprüft. Videos, deren Zeit nur vom Dateidatum stammt (z. B. kopiert), zählen als unsicher."""
+    from collections import Counter
+    clips = [c for c in clips if c.start is not None]
+    n = len(clips)
+    tage = Counter(tag_von(c.start) for c in clips)
+    sicher = [c for c in clips if c.time_source in SICHERE_QUELLEN]
+    beide = [c for c in clips if c.time_source != "Dateiname" and c.time_source in SICHERE_QUELLEN and c.name_start]
+    gleich = [c for c in beide if tag_von(c.name_start) == tag_von(c.start)]
+    quelle = {"metadaten": sum(1 for c in clips if c.time_source in ("Handy-Metadaten", "Metadaten")),
+              "dateiname": sum(1 for c in clips if c.name_start is not None), "beide": len(beide),
+              "beide_gleich": len(gleich), "unsicher": n - len(sicher)}
+    liste = []
+    for d in sorted(tage):
+        cs = [c for c in clips if tag_von(c.start) == d]
+        liste.append({"datum": d.isoformat(), "n": len(cs), "von": min(c.start for c in cs).strftime("%H:%M"),
+                      "bis": max(c.start for c in cs).strftime("%H:%M")})
+    grund = ""
+    if len(tage) < 2:
+        grund = "ein_tag"
+    elif len(tage) > max_tage:
+        grund = "zu_viele"
+    elif len(sicher) < 0.8 * n:
+        grund = "unsicher"
+    elif beide and len(gleich) < 0.9 * len(beide):
+        grund = "widerspruch"
+    elif min(tage.values()) < max(2, int(0.03 * n)):
+        grund = "zu_wenig"     # ein „Tag“ mit nur einem Video ist eher ein Ausreißer (falsch gestellte Uhr)
+    return {"eindeutig": not grund, "grund": grund, "tage": liste, "quelle": quelle, "n": n}
+
+
+_ORD_DE = {"erst": 1, "zweit": 2, "dritt": 3, "viert": 4, "fünft": 5, "fuenft": 5, "sechst": 6, "siebt": 7,
+           "acht": 8, "neunt": 9, "zehnt": 10}
+_ORD_EN = {"first": 1, "second": 2, "third": 3, "fourth": 4, "fifth": 5, "sixth": 6, "seventh": 7, "eighth": 8,
+           "ninth": 9, "tenth": 10}
+_ZAHL_EN = {"one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10}
+_WT_DE = ["montag", "dienstag", "mittwoch", "donnerstag", "freitag", "samstag", "sonntag"]
+_WT_EN = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
+
+
+def _tag_marken(text, tage):
+    """Stellen im Text, an denen ein Tag beginnt: [(Position, Tag-Index oder "+1")]."""
+    from datetime import date
+    days = [date.fromisoformat(t["datum"]) for t in tage]
+    N = len(days)
+    out = []
+    low = text.lower()
+    pats = [
+        (r"\b(?:am\s+|an\s+dem\s+)?(" + "|".join(_ORD_DE) + r")(?:e|en|er|es)\s+tag\b", lambda m: _ORD_DE[m.group(1)] - 1),
+        (r"\b(?:on\s+)?(?:the\s+)?(" + "|".join(_ORD_EN) + r")\s+day\b", lambda m: _ORD_EN[m.group(1)] - 1),
+        (r"\btag\s+(\d{1,2})\b", lambda m: int(m.group(1)) - 1),
+        (r"\bday\s+(\d{1,2}|" + "|".join(_ZAHL_EN) + r")\b",
+         lambda m: (int(m.group(1)) if m.group(1).isdigit() else _ZAHL_EN[m.group(1)]) - 1),
+        (r"\b(?:am\s+)?letzten\s+tag\b|\babreisetag\b|\b(?:on\s+)?the\s+last\s+day\b|\bdeparture\s+day\b",
+         lambda m: N - 1),
+        (r"\banreisetag\b|\b(?:am\s+)?ankunftstag\b|\barrival\s+day\b", lambda m: 0),
+        (r"\b(?:am\s+)?(?:nächsten|naechsten|folgenden)\s+tag\b|\btags\s+darauf\b|\bam\s+tag\s+danach\b|"
+         r"\b(?:on\s+)?the\s+(?:next|following)\s+day\b|\bthe\s+day\s+after\b", lambda m: "+1"),
+        (r"\b(?:am\s+|on\s+)?(" + "|".join(_WT_DE + _WT_EN) + r")s?\b",
+         lambda m: next((i for i, d in enumerate(days) if d.weekday() == ((_WT_DE + _WT_EN).index(m.group(1)) % 7)),
+                        None)),
+        (r"\b(?:am\s+)?(\d{1,2})\.\s?(\d{1,2})\.", lambda m: next((i for i, d in enumerate(days)
+                                                                   if (d.day, d.month) == (int(m.group(1)),
+                                                                                           int(m.group(2)))), None)),
+    ]
+    for pat, fn in pats:
+        for m in re.finditer(pat, low):
+            if any(low[max(0, m.start() - 8):m.start()].endswith(x) for x in ("jeden ", "every ", "each ", "pro ")):
+                continue
+            v = fn(m)
+            if v is None or (v != "+1" and not 0 <= v < N):
+                continue
+            out.append((m.start(), m.end(), v))
+    out.sort()
+    res = []
+    for pos, end, v in out:   # überlappende Treffer (z. B. „am letzten Tag“ und „Tag“) nur einmal
+        if res and pos < res[-1][1]:
+            continue
+        res.append((pos, end, v))
+    return res
+
+
+def nach_tagen_teilen(text, tage):
+    """Eine Ablaufbeschreibung über mehrere Tage auf die Tage verteilen: {"tage": [Text je Tag], "alle": Text für
+    Programmpunkte an allen Tagen, "erkannt": ob Tage im Text genannt wurden}. Sätze mit „jeden Tag“, „täglich“ …
+    kommen zu „alle“. Text vor der ersten Tagesangabe gehört zum ersten Tag."""
+    N = len(tage)
+    res = {"tage": [""] * N, "alle": "", "erkannt": False}
+    t = (text or "").strip()
+    if not t or N == 0:
+        return res
+    marken = _tag_marken(t, tage)
+    res["erkannt"] = bool(marken)
+    grenzen = [(0, 0, 0)] + marken
+    cur = 0
+    stuecke = []
+    for j, (pos, end, v) in enumerate(grenzen):
+        cur = (min(N - 1, cur + 1) if v == "+1" else v) if j else 0
+        ende = grenzen[j + 1][0] if j + 1 < len(grenzen) else len(t)
+        stuecke.append((cur, t[end:ende].lstrip(" ,:–-")))   # die Tagesangabe selbst gehört nicht zum Ablauf
+    for tag, st in stuecke:
+        for satz in re.split(r"(?<=[.!?;])\s+|\n+", st):
+            satz = satz.strip()
+            if not satz:
+                continue
+            ziel = "alle" if any(x in satz.lower() for x in TAEGLICH) else tag
+            if ziel == "alle":
+                res["alle"] = (res["alle"] + " " + satz).strip()
+            else:
+                res["tage"][ziel] = (res["tage"][ziel] + " " + satz).strip()
+    return res
+
+
+def tag_label(datum, lang="de", kurz=True, alle_tage=None):
+    """„Di“ (alle Tage in einer Woche) bzw. „14.07.“ – für Stichwort-Namen wie „Proben · Di“."""
+    from datetime import date
+    from .i18n import WOCHENTAG
+    d = date.fromisoformat(datum)
+    eine_woche = alle_tage is None or len({date.fromisoformat(x).weekday() for x in alle_tage}) == len(alle_tage)
+    wt = WOCHENTAG["en" if lang == "en" else "de"][d.weekday()]
+    if kurz and eine_woche:
+        return wt
+    return f"{wt} {d.day}/{d.month}" if lang == "en" else f"{wt} {d:%d.%m.}"
+
+
+def parse_tage(texte, alle, tage, lang=None, start_id=1):
+    """Stichworte je Tag: [Text je Tag], Text für alle Tage → Stichworte mit "tag" (Datum) und "basis" (Name ohne Tag).
+    Programmpunkte „an allen Tagen“ bekommt jeder Tag als eigenes, wiederkehrendes Stichwort."""
+    daten = [t["datum"] for t in tage]
+    alle_kw = parse_beschreibung(alle, sprache=lang) if (alle or "").strip() else []
+    out = []
+    for i, d in enumerate(daten):
+        eigene = parse_beschreibung(texte[i] if i < len(texte) else "", sprache=lang)
+        namen = {k["name"].lower() for k in eigene}
+        extra = [dict(k, wiederkehrend=True) for k in alle_kw if k["name"].lower() not in namen]
+        for k in eigene + extra:
+            lab = tag_label(d, lang or "de", alle_tage=daten)
+            out.append({"id": f"k{start_id + len(out)}", "name": f"{k['name']} · {lab}"[:40], "basis": k["name"],
+                        "text": k["text"], "wiederkehrend": bool(k["wiederkehrend"]), "gewicht": 1.0, "tag": d})
+    return out

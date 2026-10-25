@@ -159,6 +159,20 @@ def test_workflow(app):
         # 5 description: voice input (fake microphone + simulated speech model), then the full text
         pg.click("[data-go=ablauf]")
         pg.wait_for_selector("#btext")
+        # several recording days: the question comes up; try "by days", then go on with everything together
+        pg.wait_for_selector("#tja")
+        assert len(pg.query_selector_all(".tagliste li")) == 4
+        pg.click("#tja")
+        pg.wait_for_selector(".tagtext")
+        assert len(pg.query_selector_all(".tagtext")) == 4
+        pg.fill("#btext", "Bus und Anmeldung. Jeden Tag Proben. Am letzten Tag das Abschlusskonzert." if lang == "de" else
+                "Bus and registration. Every day rehearsals. On the last day the final concert.")
+        pg.click("#tverteil")
+        pg.wait_for_function("document.querySelectorAll('.tagtext')[3].value.length > 5")
+        assert "Bus" in pg.input_value(".tagtext >> nth=0") and pg.input_value("#talle")
+        snap("05a_tage")
+        pg.click('[data-f="tmod"] button[data-v="0"]')
+        pg.wait_for_function("!document.querySelector('.tagtext')")
         pg.click("#bmic")
         pg.wait_for_timeout(2000)
         pg.click("#bmic")

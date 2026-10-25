@@ -1,6 +1,7 @@
 """Projekt: Zustand, Persistenz, Hintergrundaufgaben und alle Arbeitsschritte des Assistenten."""
 import copy
 import json
+import re
 import os
 import shutil
 import threading
@@ -584,7 +585,10 @@ class Projekt:
                 c._frame_sims = None
         idx = self.kw_index()
         manuell = {i: idx[c.kat_manuell] for i, c in enumerate(act) if c.kat_manuell in idx}
-        path, conf = ER.zuordnen(act, sims, kws, manuell)
+        if self.tage_aktiv():
+            path, conf = self._zuordnen_nach_tagen(act, sims, kws, manuell)
+        else:
+            path, conf = ER.zuordnen(act, sims, kws, manuell)
         for c, k, p in zip(act, path, conf):
             c.kw = kws[k]["id"] if k is not None else None
             c.kw_sicher = p
@@ -602,6 +606,63 @@ class Projekt:
                 kt = [f[0] for f in c.ana["ki_frames"]]
                 self.kw_bonus[c.key] = np.interp(c.grid, kt[:len(z)], z) if len(kt) >= 1 else None
         self.update_scenes()
+
+    # ------------------------------------------------------------------ mehrere Tage
+    def tage_aktiv(self):
+        return bool(self.d.get("tage_modus")) and any(k.get("tag") for k in self.d["stichworte"])
+
+    def tage_info(self):
+        """Über welche Tage gehen die Videos, ist das sicher, und soll die Erkennung danach gehen?"""
+        info = ER.tage_erkennen([c for c in self.clips if c.prio != "raus"])
+        daten = [t["datum"] for t in info["tage"]]
+        lang = get_lang()
+        for i, t in enumerate(info["tage"]):
+            t["nr"] = i + 1
+            t["label"] = ER.tag_label(t["datum"], lang, kurz=False, alle_tage=daten)
+            t["kurz"] = ER.tag_label(t["datum"], lang, alle_tage=daten)
+        info["modus"] = self.d.get("tage_modus")
+        info["texte"] = self.d.get("beschreibung_tage") or {"tage": [""] * len(daten), "alle": ""}
+        return info
+
+    def tage_setzen(self, an):
+        self.d["tage_modus"] = bool(an)
+        self.save()
+        return self.tage_info()
+
+    def _zuordnen_nach_tagen(self, act, sims, kws, manuell):
+        """Je Tag getrennt zuordnen: Clips eines Tages bekommen nur Stichworte dieses Tages (und solche ohne Tag).
+        Von Hand zugeordnete Clips behalten ihr Stichwort, auch wenn es zu einem anderen Tag gehört."""
+        n = len(act)
+        path, conf = [None] * n, [0.0] * n
+        gruppen = {}
+        for i, c in enumerate(act):
+            gruppen.setdefault(ER.tag_von(c.start).isoformat(), []).append(i)
+        for d, idxs in gruppen.items():
+            kidx = {j for j, k in enumerate(kws) if k.get("tag") in (d, None, "")}
+            kidx |= {manuell[i] for i in idxs if i in manuell}
+            kidx = sorted(kidx) or list(range(len(kws)))
+            sub_sims = [None if sims[i] is None else np.asarray(sims[i])[kidx] for i in idxs]
+            sub_man = {p: kidx.index(manuell[i]) for p, i in enumerate(idxs) if i in manuell}
+            sp, sc = ER.zuordnen([act[i] for i in idxs], sub_sims, [kws[j] for j in kidx], sub_man)
+            for p, i in enumerate(idxs):
+                path[i] = kidx[sp[p]] if sp[p] is not None else None
+                conf[i] = sc[p]
+        return path, conf
+
+    def _tag_fuer(self, clips):
+        """Tag (Datum) für ein neues Stichwort aus diesen Clips – nur wenn nach Tagen erkannt wird."""
+        if not self.d.get("tage_modus") or not clips:
+            return None
+        first = min(clips, key=lambda c: c.order)
+        return ER.tag_von(first.start).isoformat()
+
+    def _kw_mit_tag(self, kw, tag):
+        if tag:
+            daten = [t["datum"] for t in ER.tage_erkennen([c for c in self.clips if c.prio != "raus"])["tage"]]
+            kw["basis"] = kw["name"]
+            kw["tag"] = tag
+            kw["name"] = f"{kw['name']} · {ER.tag_label(tag, get_lang(), alle_tage=daten or None)}"[:40]
+        return kw
 
     def _text_matrix(self, kws, act):
         """Text-Merkmale aus dem Zwischenspeicher. Fehlt ein Stichwort (neu angelegt oder umbenannt), steht für
@@ -636,6 +697,7 @@ class Projekt:
         pos = ids.index(prev[-1].kw) + 1 if prev and prev[-1].kw in ids else 0
         new = {"id": f"k{int(time.time() * 1000) % 10 ** 8}", "name": name, "text": name, "wiederkehrend": False,
                "gewicht": 1.0}
+        self._kw_mit_tag(new, self._tag_fuer(clips))
         kws.insert(pos, new)
         for c in clips:
             self.d["clips"].setdefault(c.name, {})["kat"] = new["id"]
@@ -734,14 +796,23 @@ class Projekt:
     def set_stichworte(self, lst):
         clean = []
         used = set()
+        daten = [t["datum"] for t in ER.tage_erkennen([c for c in self.clips if c.prio != "raus"])["tage"]] \
+            if any(k.get("tag") for k in lst) else []
         for i, k in enumerate(lst):
             kid = str(k.get("id") or f"k{int(time.time() * 1000) % 100000}{i}")
             while kid in used:
                 kid += "x"
             used.add(kid)
-            clean.append({"id": kid, "name": str(k.get("name", "")).strip()[:40] or _t("Teil {n}", n=i + 1),
-                          "text": str(k.get("text", "")).strip()[:400], "wiederkehrend": bool(k.get("wiederkehrend")),
-                          "gewicht": float(k.get("gewicht", 1.0))})
+            e = {"id": kid, "name": str(k.get("name", "")).strip()[:40] or _t("Teil {n}", n=i + 1),
+                 "text": str(k.get("text", "")).strip()[:400], "wiederkehrend": bool(k.get("wiederkehrend")),
+                 "gewicht": float(k.get("gewicht", 1.0))}
+            tag = str(k.get("tag") or "")
+            if re.fullmatch(r"\d{4}-\d\d-\d\d", tag):
+                # Name = Name ohne Tag + „ · Tag“ (auch wenn der Tag oder der Name geändert wurde)
+                basis = e["name"].split(" · ")[0].strip() or e["name"]
+                e.update(basis=basis, tag=tag)
+                e["name"] = f"{basis} · {ER.tag_label(tag, get_lang(), alle_tage=daten or None)}"[:40]
+            clean.append(e)
         self.d["stichworte"] = clean
         self.save()
 
@@ -765,6 +836,8 @@ class Projekt:
                 pos = ids.index(prev_kw) + 1 if prev_kw in ids else 0
             new = {"id": f"k{int(time.time()) % 100000}", "name": fr["label"], "text": fr["text"], "wiederkehrend": False,
                    "gewicht": 1.0}
+            if first is not None:
+                self._kw_mit_tag(new, self._tag_fuer(first["clips"]))
             kws.insert(pos, new)
             self.d.setdefault("abgelehnt", []).append(label)
         elif antwort == "zuordnen" and fr and kw:

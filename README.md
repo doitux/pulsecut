@@ -30,6 +30,8 @@ footage shows children.
 4. **Describe the events**, typed or spoken: *“First everyone arrives by bus, then registration. Every day
    rehearsals, in between free time with football. On the last day the final concert, after that the group
    photo.”* This becomes an ordered list of keywords; “every day” or “in between” marks a keyword as recurring.
+   If the videos clearly come from several days (recording time and file names agree), Pulsecut offers to go by
+   days: keywords per day, and each day's keywords are only looked for in that day's videos.
 5. **Recognise scenes.** A local AI (CLIP) compares every clip with your keywords and combines this with the order you
    described. Uncertain scenes are marked. If footage seems to belong to something you did not mention, Pulsecut asks:
    *“Wasn't there also a party / disco?”*

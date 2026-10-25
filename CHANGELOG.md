@@ -7,6 +7,14 @@ The preview versions 1.0.0–1.0.10 published before have been withdrawn; their 
 
 ## Unreleased (nightly)
 - Test builds as nightly: build number and commit in the file name and in the program (window title, start page).
+- **Projects over several days**: Pulsecut recognises from the recording time (metadata) and the file names, checked
+  against each other, whether the videos come from several days (videos up to 4 am count for the day before). If this
+  is clear, step 5 asks whether the recognition should go by days. Then you describe the course of events per day –
+  or speak/type it as a whole (“on the first day …, on Wednesday …, on the last day …”) and let Pulsecut distribute
+  it; sentences with “every day” go to *on all days*, and every day gets its own keyword for them (e.g. “Rehearsals ·
+  Mon”, “Rehearsals · Tue”). The recognition then looks for each day's keywords only in that day's videos, so the
+  rehearsals of the first day are no longer mixed up with those of the last day. Not offered when the times are
+  unsure (e.g. only file dates of copied files) or metadata and file names disagree.
 
 ### 2026-10-24
 - Title: bold on or off, separately for title (default: bold) and subtitle (default: regular).
