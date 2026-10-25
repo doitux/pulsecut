@@ -176,6 +176,7 @@ def test_workflow(app):
         pg.click("#bmic")
         pg.wait_for_timeout(2000)
         pg.click("#bmic")
+        pg.wait_for_selector("#sjob .fortschritt", timeout=20000)        # progress of the voice input is shown
         pg.wait_for_function("document.querySelector('#btext').value.trim().length > 10", timeout=120000)
         first = fake.DESCRIPTION_EN if lang == "en" else fake.BESCHREIBUNG
         assert pg.input_value("#btext").strip() == first.split("\n")[0]

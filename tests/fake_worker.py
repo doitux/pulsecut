@@ -49,5 +49,9 @@ for a in job["aufgaben"]:
                 f.write(json.dumps({"key": it["key"], "ton": {"t": [0.0], "fenster": 10.0, "musik": [0.1], "applaus": [0.0], "lachen": [0.0], "jubel": [0.0], "gruppe": [0.0], "sprache": [0.0]}}) + "\n")
                 done += 1; print(f"FORTSCHRITT {done} {total}", flush=True)
     elif a["art"] == "sprache":
+        import time
+        print("SCHRITT laden", flush=True); time.sleep(0.6)
+        print("SCHRITT erkennen", flush=True); print("ERKENNE 1.0 2.0", flush=True); time.sleep(0.8)
+        print("ERKENNE 2.0 2.0", flush=True)
         Path(a["out"]).write_text((DESCRIPTION_EN if a.get("sprache") == "en" else BESCHREIBUNG).split("\n")[0]); done += 1
 print("FERTIG", flush=True)

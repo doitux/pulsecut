@@ -401,6 +401,7 @@ R.ablauf = {
     m.innerHTML = `<h1>${T("Ablauf beschreiben")}</h1><p class="lead">${T("Beschreib kurz, was in welcher Reihenfolge passiert ist – sprich es ein oder tipp es. Zum Beispiel: <i>„Am Anfang kommen alle mit dem Bus an, dann Anmeldung mit Armbändern. Jeden Tag Proben, zwischendurch Freizeit mit Fußball. Am Mittwoch Ausflug ins Museum, am Ende das Konzert, danach Gruppenfoto und Abreise.“</i> Daraus werden Stichworte, die die KI in den Videos sucht.")}</p>
       <div id="tagebox"></div>
       <div class="box"><div class="row" style="margin-bottom:8px"><span class="mic"><button id="bmic">${T("🎤 Aufnehmen")}</button><span class="pegel"><b id="pegel"></b></span><span class="meta" id="mtxt"></span></span></div>
+      <div id="sjob"></div>
       <textarea id="btext" rows="6" placeholder="${T("Ablauf hier eintippen oder einsprechen …")}"></textarea>
       <div id="tagfelder"></div>
       <div class="row" style="margin-top:8px"><button class="pri" id="bparse">${T("Stichworte daraus machen")}</button><button id="bparse2">${T("Stichworte ergänzen")}</button><span class="meta">${T("„Jeden Tag“, „zwischendurch“, „immer wieder“ → das Stichwort darf mehrmals vorkommen.")}</span></div></div>
@@ -502,14 +503,16 @@ R.ablauf = {
     rec.onstop = async () => {
       stream.getTracks().forEach(t => t.stop()); ac.close(); rec = null; b.classList.remove("rec"); b.textContent = T("🎤 Aufnehmen"); $("#pegel").style.width = 0;
       const blob = new Blob(chunks, {type: "audio/webm"});
-      $("#mtxt").textContent = T("Wandle in Text um …");
+      $("#mtxt").textContent = T("Aufnahme wird übergeben …");
       const r = await fetch("/api/sprache", {method: "POST", headers: {"Content-Type": "audio/webm"}, body: blob}).then(r => r.json());
       if (!r.ok) { $("#mtxt").textContent = ""; return toast(r.fehler); }
-      this.waitText = true;
+      $("#mtxt").textContent = "";
+      this.waitText = true; this.sprachJob(true);
     };
     rec.start(); meter(); b.classList.add("rec"); b.textContent = T("⏹ Aufnahme beenden"); $("#mtxt").textContent = T("Sprich jetzt …");
   },
   onJob(n, j) {
+    if (n === "sprache") this.sprachJob();
     if (n === "sprache" && this.waitText) {
       this.waitText = false; $("#mtxt").textContent = "";
       const t = Z.projekt.sprache_text;
@@ -519,7 +522,15 @@ R.ablauf = {
       }
     }
   },
-  onPoll(z) { const j = z.projekt.jobs.sprache; if (j && j.laeuft && $("#mtxt")) $("#mtxt").textContent = j.text; },
+  sprachJob(gestartet) {
+    // Fortschritt der Spracheingabe: Sprachmodell herunterladen/laden, dann erkennen – mit Balken
+    const el = $("#sjob"); if (!el || !Z || !Z.projekt) return;
+    const j = Z.projekt.jobs.sprache;
+    if (gestartet && !(j && j.laeuft)) { el.innerHTML = `<div class="box"><b>${T("Spracheingabe")}</b> <span class="meta">${T("KI wird gestartet …")}</span><div class="fortschritt"><b style="width:2%"></b></div></div>`; return; }
+    el.innerHTML = j && j.laeuft ? jobBox("sprache", T("Spracheingabe")) : "";
+    const b = $("#bmic"); if (b && !rec) b.disabled = !!(j && j.laeuft);
+  },
+  onPoll() { this.sprachJob(); },
   leave() { if (rec) rec.stop(); }
 };
 let TG = null;

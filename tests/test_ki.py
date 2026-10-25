@@ -97,9 +97,13 @@ def test_speech_input(ki_ready, tmp_path, lang, text, words):
     subprocess.run(["espeak-ng", "-v", lang, "-s", "140", "-w", str(wav), text], check=True)
     webm = tmp_path / f"speech_{lang}.webm"
     ff("-i", wav, "-c:a", "libopus", webm)   # the browser sends WebM/Opus
-    out = KI.transkribieren(webm, tmp_path, sprache=lang).lower()
-    print(lang, "→", out)
+    meldungen = []
+    out = KI.transkribieren(webm, tmp_path, lambda a, b, t: meldungen.append((a, b, t)), sprache=lang).lower()
+    print(lang, "→", out, "| progress:", [m[2] for m in meldungen][:4], len(meldungen))
     assert all(w in out for w in words), out
+    # the program shows what is happening: model loaded (or downloaded), then how far the recognition is
+    assert any(a is not None and b for a, b, _ in meldungen), meldungen
+    assert any("erkannt" in t or "Recognising" in t for _, _, t in meldungen), meldungen
 
 
 def test_recognition_on_project(ki_ready, projekt):

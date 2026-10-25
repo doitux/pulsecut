@@ -132,6 +132,19 @@ def run_worker(aufgaben, workdir, progress=None):
                 progress(int(a), int(b), "")
             elif line.startswith("MODELL") and progress:
                 progress(None, None, _t("lade KI-Modell {m} (beim ersten Mal Download)", m=line[7:]))
+            elif line.startswith("SCHRITT") and progress:
+                schritt = line.split()[1]
+                progress(None, None, {"download": _t("Sprachmodell wird heruntergeladen (einmalig) …"),
+                                      "laden": _t("Sprachmodell wird geladen …"),
+                                      "erkennen": _t("Sprache wird erkannt …")}.get(schritt, schritt))
+            elif line.startswith("DOWNLOAD") and progress:
+                _, mb, tot = line.split()
+                progress(float(mb), float(tot), _t("Sprachmodell wird heruntergeladen (einmalig): {a} von ca. {b} MB",
+                                                   a=mb, b=tot))
+            elif line.startswith("ERKENNE") and progress:
+                _, t, d = line.split()
+                progress(float(t), float(d), _t("Sprache wird erkannt: {a} von {b} s", a=t.replace(".", ","),
+                                                b=d.replace(".", ",")))
         p.wait()
         th.join(timeout=2)
     jf.unlink(missing_ok=True)

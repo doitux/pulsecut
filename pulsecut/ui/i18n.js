@@ -11,6 +11,9 @@ function T(s, ...v) {
   return v.length ? out.replace(/\{(\d+)\}/g, (_, i) => v[+i]) : out;
 }
 const EN = {
+ "Aufnahme wird übergeben …": "Handing over the recording …",
+ "Spracheingabe": "Voice input",
+ "KI wird gestartet …": "Starting the AI …",
  "Erkannt an der Aufnahmezeit (Metadaten) und an den Dateinamen – beides passt zusammen.": "Recognised from the recording time (metadata) and the file names – both agree.",
  "Erkannt an der Aufnahmezeit der Videos.": "Recognised from the recording time of the videos.",
  "Die Videos stammen von {0} Tagen:": "The videos are from {0} days:",
@@ -257,7 +260,6 @@ const EN = {
  "Für die Spracheingabe braucht Pulsecut die KI-Erkennung (einmaliger Download, ca. 1,5 GB). Jetzt einrichten? Du kannst den Ablauf auch einfach eintippen.": "Voice input needs Pulsecut's AI recognition (one-time download, about 1.5 GB). Set it up now? You can also simply type the description.",
  "Einrichten": "Set up",
  "Kein Zugriff auf das Mikrofon: ": "No access to the microphone: ",
- "Wandle in Text um …": "Converting to text …",
  "⏹ Aufnahme beenden": "⏹ Stop recording",
  "Sprich jetzt …": "Speak now …",
  "Text erkannt – prüfen und dann „Stichworte daraus machen“.": "Text recognised – check it, then click “Make keywords”.",

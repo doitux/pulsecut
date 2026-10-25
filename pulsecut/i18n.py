@@ -117,8 +117,6 @@ EN = {
     "Rückblick-Videos automatisch im Takt der Musik schneiden": "Automatically cut recap videos to the beat of the music",
     "Für die Spracheingabe bitte zuerst die KI-Erkennung einrichten (Schritt 6) – oder den Ablauf eintippen.":
         "For voice input, please set up AI recognition first (step 6) – or type the description.",
-    "Wandle Sprache in Text um (beim ersten Mal wird das Sprachmodell geladen) …":
-        "Converting speech to text (the speech model is loaded the first time) …",
     "Text erkannt": "Text recognised",
     "unbekannt": "unknown",
     # planer.py
@@ -175,6 +173,13 @@ EN = {
     "In diesem Clip ist keine freie Stelle mehr.": "There is no free passage left in this clip.",
     "In dieser Szene ist keine freie Stelle mehr.": "There is no free passage left in this scene.",
     "Kein Platz: Alle anderen Schnitte sind gesperrt.": "No room: all other shots are locked.",
+    "Sprachmodell wird heruntergeladen (einmalig) …": "Downloading the speech model (one-time) …",
+    "Sprachmodell wird geladen …": "Loading the speech model …",
+    "Sprache wird erkannt …": "Recognising speech …",
+    "Sprachmodell wird heruntergeladen (einmalig): {a} von ca. {b} MB":
+        "Downloading the speech model (one-time): {a} of about {b} MB",
+    "Sprache wird erkannt: {a} von {b} s": "Recognising speech: {a} of {b} s",
+    "KI wird gestartet …": "Starting the AI …",
     # hwdec.py
     "VAAPI-Treiber fehlt (Paket intel-media-va-driver oder i965-va-driver)":
         "VAAPI driver missing (package intel-media-va-driver or i965-va-driver)",

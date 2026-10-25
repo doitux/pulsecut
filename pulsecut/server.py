@@ -307,11 +307,26 @@ def api_post(path, b, raw=None, ctype=""):
         STATE.sprache_text = ""
 
         def job(j):
-            j.text = _t("Wandle Sprache in Text um (beim ersten Mal wird das Sprachmodell geladen) …")
+            j.text = _t("KI wird gestartet …")
+            j.fortschritt = 0.02
+
+            phase = {"p": "start"}
 
             def prog(a, bb, t):
+                # Download zählt bis 40 %, Laden bis 50 %, die Erkennung selbst den Rest
+                if t == _t("Sprachmodell wird heruntergeladen (einmalig) …"):
+                    phase["p"] = "download"
+                elif t == _t("Sprachmodell wird geladen …"):
+                    phase["p"] = "laden"
+                    j.fortschritt = max(j.fortschritt, 0.45)
+                elif t == _t("Sprache wird erkannt …"):
+                    phase["p"] = "erkennen"
+                    j.fortschritt = max(j.fortschritt, 0.5)
                 if t:
                     j.text = t
+                if a is not None and bb:
+                    anteil = min(1.0, a / bb)
+                    j.fortschritt = 0.02 + 0.38 * anteil if phase["p"] == "download" else 0.5 + 0.49 * anteil
             STATE.sprache_text = KI.transkribieren(f, pr.dirs["tmp"], prog, sprache=get_lang())
             j.text = _t("Text erkannt")
         pr.start_job("sprache", job)

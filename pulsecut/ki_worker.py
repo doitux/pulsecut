@@ -34,6 +34,39 @@ def say(msg):
     print(msg, flush=True)
 
 
+WHISPER_MB = {"tiny": 75, "base": 145, "small": 484, "medium": 1530, "large-v3": 3100, "large-v2": 3100}
+
+
+def _download_melden(name):
+    """Ist das Sprachmodell noch nicht da, lädt faster-whisper es beim Laden herunter: währenddessen die schon geladene
+    Menge melden (DOWNLOAD mb gesamt_mb). Gibt eine Funktion zum Beenden zurück."""
+    import threading
+    import time
+    try:
+        from faster_whisper.utils import download_model
+        download_model(name, local_files_only=True)
+        say("SCHRITT laden")
+        return lambda: None
+    except Exception:
+        pass
+    say("SCHRITT download")
+    try:
+        from huggingface_hub import constants
+        root = Path(constants.HF_HUB_CACHE)
+    except Exception:
+        root = Path.home() / ".cache" / "huggingface" / "hub"
+    repo = root / f"models--Systran--faster-whisper-{name}"
+    total = WHISPER_MB.get(name, 500)
+    fertig = threading.Event()
+
+    def mess():
+        while not fertig.wait(0.7):
+            mb = sum(f.stat().st_size for f in repo.rglob("*") if f.is_file()) / 1e6 if repo.exists() else 0.0
+            say(f"DOWNLOAD {min(mb, total * 0.99):.0f} {total}")
+    threading.Thread(target=mess, daemon=True).start()
+    return fertig.set
+
+
 def main(jobfile):
     job = json.loads(Path(jobfile).read_text(encoding="utf-8"))
     import torch
@@ -108,14 +141,24 @@ def main(jobfile):
             out.close()
         elif art == "sprache":
             from faster_whisper import WhisperModel
-            say(f"MODELL Sprache {models['sprache']}")
-            wm = WhisperModel(models["sprache"], device="cpu", compute_type="int8")
+            name = models["sprache"]
+            stop = _download_melden(name)
+            try:
+                wm = WhisperModel(name, device="cpu", compute_type="int8")
+            finally:
+                stop()
+            say("SCHRITT erkennen")
             # Audio selbst mit ffmpeg dekodieren: unabhängig von der PyAV-Version, die faster-whisper sonst nutzt
             p = subprocess.run(["ffmpeg", "-nostdin", "-hide_banner", "-loglevel", "error", "-i", a["pfad"], "-vn",
                                 "-ac", "1", "-ar", "16000", "-f", "f32le", "-"], capture_output=True, check=True)
             audio = np.frombuffer(p.stdout, np.float32).copy()
+            dauer = max(0.1, len(audio) / 16000)
             segs, _info = wm.transcribe(audio, language=a.get("sprache", "de"), vad_filter=True, beam_size=5)
-            text = " ".join(s.text.strip() for s in segs).strip()
+            teile = []
+            for sg in segs:   # Segment für Segment: so weit ist die Erkennung im Gesprochenen
+                teile.append(sg.text.strip())
+                say(f"ERKENNE {min(sg.end, dauer):.1f} {dauer:.1f}")
+            text = " ".join(teile).strip()
             Path(a["out"]).write_text(text, encoding="utf-8")
             done += 1
             say(f"FORTSCHRITT {done} {total}")

@@ -111,7 +111,8 @@ def voc_label(j, lang="de"):
 def _name_de(p):
     words = re.findall(r"[A-Za-zÄÖÜäöüß][A-Za-zÄÖÜäöüß\-]*", p)
     caps = [w for w in words if w[0].isupper() and w.lower() not in STOP]
-    return caps[:2] or [w for w in words if w.lower() not in STOP][:3] or words[:2]
+    # nur Füllwörter oder Zeitangaben („da haben wir“, „am ersten Tag“): kein Stichwort
+    return caps[:2] or [w for w in words if w.lower() not in STOP][:3]
 
 
 def _name_en(p):
@@ -120,7 +121,7 @@ def _name_en(p):
     content = [i for i, w in enumerate(words) if w.lower() not in STOP_EN or w.lower() in KEEP_EN]
     content = [i for i in content if not (words[i].lower() in KEEP_EN and i + 1 not in content)]
     if not content:
-        return words[:2]
+        return []
     i = content[0]
     out = [words[i]]
     if i + 1 in content:
@@ -128,6 +129,23 @@ def _name_en(p):
     out = [w.lower() for w in out]
     out[0] = out[0][:1].upper() + out[0][1:]
     return out
+
+
+_TAGESANGABE = re.compile(
+    r"\b(?:am|an\s+dem|on|on\s+the|the)?\s*(?:(?:erst|zweit|dritt|viert|fünft|fuenft|sechst|siebt|acht|letzt|nächst|"
+    r"naechst|folgend)(?:e|en|er|es)\s+tag|first|second|third|fourth|fifth|sixth|seventh|last|next|following)\s*day\b|"
+    r"\b(?:am|an\s+dem)?\s*(?:erst|zweit|dritt|viert|fünft|fuenft|sechst|siebt|acht|letzt|nächst|naechst|folgend)"
+    r"(?:e|en|er|es)\s+tag\b|\btag(?:e)?\s+\d{1,2}\b|\bday\s+(?:\d{1,2}|one|two|three|four|five|six|seven)\b|"
+    r"\btags\s+darauf\b|\bam\s+tag\s+danach\b|\bthe\s+day\s+after\b|"
+    r"\b(?:am|on)\s+(?:montag|dienstag|mittwoch|donnerstag|freitag|samstag|sonntag|monday|tuesday|wednesday|"
+    r"thursday|friday|saturday|sunday)s?\b|\b(?:montag|dienstag|mittwoch|donnerstag|freitag|samstag|sonntag)s?\b|"
+    r"\b(?:am\s+)?\d{1,2}\.\s?\d{1,2}\.(?:\d{2,4})?", re.I)
+
+
+def ohne_tagesangaben(p):
+    """Tagesangaben entfernen („am ersten Tag“, „am Mittwoch“, „Tag 2“, „13.07.“) – sie ordnen nur ein."""
+    q = _TAGESANGABE.sub(" ", p)
+    return re.sub(r"\s+", " ", q).strip(" ,.;:!?-–")
 
 
 def parse_beschreibung(text, start_id=1, sprache=None):
@@ -143,7 +161,7 @@ def parse_beschreibung(text, start_id=1, sprache=None):
     wieder = WIEDER_EN if lang == "en" else WIEDER
     parts = []
     for line in re.split(r"[\n]|(?<=[.!?;])\s+|\s+[-–•]\s+|^\s*[-–•]\s*", text):
-        line = (line or "").strip()
+        line = ohne_tagesangaben((line or "").strip())   # vor dem Zerlegen: „on the next day“ ist kein „next“
         if not line:
             continue
         for p in re.split(connect + split_extra, line, flags=re.I):
@@ -153,11 +171,15 @@ def parse_beschreibung(text, start_id=1, sprache=None):
                 parts.append(p)
     out, seen = [], {}
     for p in parts:
+        orig = p
+        p = ohne_tagesangaben(p)   # „Am zweiten Tag Freizeit“ → „Freizeit“ (der Tag ordnet nur ein)
+        if len(p) < 3:
+            continue
         name_words = _name_en(p) if lang == "en" else _name_de(p)
         if not name_words:
             continue
         name = " ".join(name_words)[:32]
-        low = p.lower()
+        low = orig.lower()
         rec = any(x in low for x in wieder)
         key = name.lower()
         if key in seen:   # doppelter Programmpunkt: Beschreibung ergänzen, als wiederkehrend markieren

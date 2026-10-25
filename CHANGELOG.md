@@ -6,6 +6,11 @@ tests is published as a [nightly test build](https://github.com/doitux/pulsecut/
 The preview versions 1.0.0–1.0.10 published before have been withdrawn; their changes are listed below by date.
 
 ## Unreleased (nightly)
+- Voice input (step 5): a progress bar shows what is happening – downloading the speech model the first time (with
+  MB), loading it, and how far the speech recognition has got.
+- Keywords: fillers and day phrases are no longer turned into keywords of their own (“da haben wir”, “on the first
+  day”, “am Mittwoch”, “Tag 2”, “13.07.”); in a keyword they only sort it into its day and are left out of its name
+  and description.
 - Test builds as nightly: build number and commit in the file name and in the program (window title, start page).
 - **Projects over several days**: Pulsecut recognises from the recording time (metadata) and the file names, checked
   against each other, whether the videos come from several days (videos up to 4 am count for the day before). If this

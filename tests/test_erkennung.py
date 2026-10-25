@@ -48,3 +48,15 @@ def test_assignment_without_ai(projekt):
     kws = ER.parse_beschreibung(BESCHREIBUNG)
     path, conf = ER.zuordnen(projekt.clips, [None] * len(projekt.clips), kws)
     assert path == sorted(path) and path[0] == 0 and path[-1] == len(kws) - 1
+
+
+def test_no_keywords_from_fillers_or_days():
+    """„da haben wir“ or „am ersten Tag“ alone are not keywords; day phrases only sort, they are not part of a name."""
+    n = names("Am ersten Tag. Da haben wir. Dann Anreise mit dem Bus. Am zweiten Tag Freizeit mit Fußball. "
+              "Am Mittwoch Ausflug ins Museum. Am 16.07. das Konzert. Jeden Tag Proben.")
+    assert n == ["Anreise Bus", "Freizeit Fußball", "Ausflug Museum", "Konzert", "Proben"]
+    e = names("On the first day we arrived. Then there was. Then registration. On the next day football. "
+              "On Wednesday the museum. Every day rehearsals.")
+    assert e == ["Registration", "Football", "Museum", "Rehearsals"]
+    kws = ER.parse_beschreibung("Am zweiten Tag Freizeit mit Fußball. Jeden Tag Proben.")
+    assert kws[0]["text"] == "Freizeit mit Fußball" and kws[1]["wiederkehrend"]
