@@ -61,3 +61,21 @@ def test_open_project(url, projekt):
     assert [k["name"] for k in r["stichworte"]] == ["Arrival", "Concert", "Group photo"]
     v = json.loads(get(url, "/api/videos"))
     assert len(v["clips"]) == 38
+
+
+def test_recent_projects_only_existing(tmp_path, monkeypatch):
+    """Projects whose folder is gone are no longer listed under „recently opened“."""
+    import json
+    from pulsecut import projekt as P
+    monkeypatch.setattr(P, "CONFIG_HOME", tmp_path / "cfg")
+    da = tmp_path / "Da_Pulsecut"
+    da.mkdir()
+    (da / P.PROJEKT_DATEI).write_text("{}")
+    weg = tmp_path / "Weg_Pulsecut"
+    leer = tmp_path / "Leer_Pulsecut"          # folder still there, but no project in it any more
+    leer.mkdir()
+    (tmp_path / "cfg").mkdir()
+    (tmp_path / "cfg" / "zuletzt.json").write_text(json.dumps(
+        [{"ordner": str(p), "name": p.name} for p in (da, weg, leer)]))
+    assert [x["name"] for x in P.recent_projects()] == ["Da_Pulsecut"]
+    assert len(P.recent_projects(alle=True)) == 3

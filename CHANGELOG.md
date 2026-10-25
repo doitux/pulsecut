@@ -6,6 +6,8 @@ tests is published as a [nightly test build](https://github.com/doitux/pulsecut/
 The preview versions 1.0.0–1.0.10 published before have been withdrawn; their changes are listed below by date.
 
 ## Unreleased (nightly)
+- Start page: “recently opened” only lists projects whose folder still exists (deleted or moved projects disappear;
+  a project on an external drive shows up again once the drive is connected).
 - Voice input (step 5): a progress bar shows what is happening – downloading the speech model the first time (with
   MB), loading it, and how far the speech recognition has got.
 - Keywords: fillers and day phrases are no longer turned into keywords of their own (“da haben wir”, “on the first

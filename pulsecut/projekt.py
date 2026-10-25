@@ -58,13 +58,23 @@ class Job:
                 "text": self.text, "fehler": self.fehler, "log": self.log[-8:], "fertig": self.fertig}
 
 
-def recent_projects():
-    return read_json(CONFIG_HOME / "zuletzt.json", []) or []
+def _projekt_da(ordner):
+    o = Path(ordner or "")
+    return bool(ordner) and ((o / PROJEKT_DATEI).is_file() or (o / ALTE_PROJEKT_DATEI).is_file())
+
+
+def recent_projects(alle=False):
+    """Zuletzt geöffnete Projekte – nur die, deren Projektordner (mit Projektdatei) noch da ist. Gelöschte oder
+    verschobene fallen aus der Liste; liegt ein Projekt auf einer gerade nicht eingesteckten Festplatte, taucht es
+    wieder auf, sobald sie da ist (bis es von neueren verdrängt wird)."""
+    lst = read_json(CONFIG_HOME / "zuletzt.json", []) or []
+    return lst if alle else [x for x in lst if _projekt_da(x.get("ordner"))]
 
 
 def remember_project(ordner, name):
     CONFIG_HOME.mkdir(parents=True, exist_ok=True)
-    lst = [x for x in recent_projects() if x.get("ordner") != str(ordner) and Path(x.get("ordner", "")).exists()]
+    lst = [x for x in recent_projects(alle=True) if x.get("ordner") != str(ordner)
+           and (_projekt_da(x.get("ordner")) or not Path(x.get("ordner", "")).parent.exists())]
     lst.insert(0, {"ordner": str(ordner), "name": name, "zeit": datetime.now().isoformat(timespec="minutes")})
     atomic_write_json(CONFIG_HOME / "zuletzt.json", lst[:12])
 
