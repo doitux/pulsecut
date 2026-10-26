@@ -6,6 +6,12 @@ tests is published as a [nightly test build](https://github.com/doitux/pulsecut/
 The preview versions 1.0.0–1.0.10 published before have been withdrawn; their changes are listed below by date.
 
 ## Unreleased (nightly)
+- Timeline (step 9): **undo and redo** for every edit – buttons ↶ ↷, Ctrl+Z / Ctrl+Y (or Ctrl+Shift+Z), and a history
+  list (☰) of the last actions to go back or forward several steps at once. Covered: moving a passage, length, order,
+  other passage, removing (all three choices), inserting, locks, original sound per shot and for the whole film,
+  “finished up to here”, shares, filling, re-planning, undoing a shortening. The history (up to 60 steps) is kept
+  with the project and also works after reopening it; if the music, the length or the scenes have been changed in
+  the meantime, Pulsecut says that old steps no longer fit instead of restoring something broken.
 - Start page: “recently opened” only lists projects whose folder still exists (deleted or moved projects disappear;
   a project on an external drive shows up again once the drive is connected).
 - Voice input (step 5): a progress bar shows what is happening – downloading the speech model the first time (with

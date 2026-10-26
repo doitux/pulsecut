@@ -1,5 +1,6 @@
 """Projekt: Zustand, Persistenz, Hintergrundaufgaben und alle Arbeitsschritte des Assistenten."""
 import copy
+import functools
 import json
 import re
 import os
@@ -79,6 +80,32 @@ def remember_project(ordner, name):
     atomic_write_json(CONFIG_HOME / "zuletzt.json", lst[:12])
 
 
+VERLAUF_MAX = 60   # so viele Schritte lassen sich rückgängig machen
+
+
+def aktion(text):
+    """Bearbeitung in der Timeline mit Rückgängig/Wiederholen: vorher wird der Stand gemerkt (nur wenn sich wirklich
+    etwas geändert hat). Innerhalb einer Aktion aufgerufene weitere Aktionen zählen nicht extra."""
+    def deco(fn):
+        @functools.wraps(fn)
+        def w(self, *a, **kw):
+            with self.lock:
+                if self._in_aktion:
+                    return fn(self, *a, **kw)
+                vorher = self._zustand()
+                zeit = self._shot_zeit(a[0]) if fn.__name__.startswith("shot_") and a else None
+                self._in_aktion = True
+                try:
+                    res = fn(self, *a, **kw)
+                finally:
+                    self._in_aktion = False
+                if self._zustand() != vorher:
+                    self._verlauf_merken(text, zeit, vorher)
+                return res
+        return w
+    return deco
+
+
 class Projekt:
     def __init__(self, ordner):
         self.ordner = Path(ordner).expanduser().resolve()
@@ -117,6 +144,10 @@ class Projekt:
         self.scenes = []
         self.erk = None
         self.voc_emb = None
+        self.verlauf_file = self.cache_dir / "verlauf.json"
+        v = read_json(self.verlauf_file, {}) or {}
+        self.verlauf = {"rueck": list(v.get("rueck") or []), "vor": list(v.get("vor") or [])}
+        self._in_aktion = False
         remember_project(self.ordner, d["name"])
 
     # ------------------------------------------------------------------ Anlegen / Speichern
@@ -926,6 +957,7 @@ class Projekt:
                          gewichte=self.gewichte(), bewegung_vor_chrono=bool(s.get("bewegung")),
                          kw_bonus=getattr(self, "kw_bonus", {}))
 
+    @aktion("Neu geplant")
     def plan(self, keep_locked=True, alle_sperren=False):
         with self.lock:
             self.update_layout()
@@ -973,6 +1005,108 @@ class Projekt:
         self._markiere_fix(tl)
         return tl, diff
 
+    # ------------------------------------------------------------------ Verlauf (Rückgängig / Wiederholen)
+    def _zustand(self):
+        """Alles, was die Bearbeitung in der Timeline ändert – als unabhängige Kopie."""
+        d = self.d
+        return copy.deepcopy({
+            "timeline": self.clean_timeline(d.get("timeline") or []),
+            "fertig_bis": d.get("fertig_bis"), "ende_weg": int(d.get("ende_weg") or 0),
+            "ende_auto": bool(d.get("ende_auto")), "anteile_basis": d.get("anteile_basis"),
+            "aus": {n: u["aus"] for n, u in d["clips"].items() if u.get("aus")},
+            "ton": [d["schnitt"].get("originalton", "auto"), d["schnitt"].get("absenken", 5)]})
+
+    def _setze_zustand(self, z):
+        d = self.d
+        z = copy.deepcopy(z)
+        d["timeline"] = z["timeline"]
+        d["fertig_bis"], d["ende_weg"], d["ende_auto"] = z["fertig_bis"], z["ende_weg"], z["ende_auto"]
+        d["anteile_basis"] = z["anteile_basis"]
+        for n, u in d["clips"].items():
+            if n in z["aus"]:
+                u["aus"] = z["aus"][n]
+            else:
+                u.pop("aus", None)
+        for n, aus in z["aus"].items():
+            d["clips"].setdefault(n, {})["aus"] = aus
+        d["schnitt"]["originalton"], d["schnitt"]["absenken"] = z["ton"]
+        self.apply_user_clip_settings()
+        self.update_layout()
+        self.save()
+
+    def _signatur(self):
+        """Grundlage, auf die sich der Verlauf bezieht: Musikraster (ohne Kürzung aus der Timeline) und Szenen.
+        Ändert sich das (andere Musik, Länge, Erkennung), passen alte Stände nicht mehr."""
+        if not self.layout or not self.scenes:
+            return None
+        n = len(self.layout.units) - 1 + int(self.d.get("ende_weg") or 0)
+        return md5(json.dumps([n, sorted(z["id"] for z in self.scenes)]))[:16]
+
+    def _shot_zeit(self, sid):
+        tl = self.d.get("timeline") or []
+        sh = next((s for s in tl if s.get("id") == sid), None)
+        return round(float(sh.get("tl0", 0.0)), 1) if sh else None
+
+    def _verlauf_speichern(self):
+        try:
+            atomic_write_json(self.verlauf_file, self.verlauf)
+        except OSError:
+            pass
+
+    def _verlauf_merken(self, text, zeit, vorher):
+        self.verlauf["rueck"].append({"text": text, "zeit": zeit, "stand": vorher, "sig": self._signatur(),
+                                      "wann": time.strftime("%H:%M:%S")})
+        del self.verlauf["rueck"][:-VERLAUF_MAX]
+        self.verlauf["vor"] = []
+        self._verlauf_speichern()
+
+    def _verlauf_passt(self, e):
+        sig = self._signatur()
+        if sig is None:
+            return None            # Projekt noch nicht fertig geladen
+        return e.get("sig") == sig
+
+    def rueckgaengig(self, schritte=1):
+        return self._verlauf_gehen("rueck", "vor", schritte)
+
+    def wiederholen(self, schritte=1):
+        return self._verlauf_gehen("vor", "rueck", schritte)
+
+    def _verlauf_gehen(self, von, nach, schritte):
+        with self.lock:
+            gemacht = []
+            for _ in range(max(1, int(schritte))):
+                if not self.verlauf[von]:
+                    break
+                e = self.verlauf[von][-1]
+                ok = self._verlauf_passt(e)
+                if ok is None:
+                    return {"ok": False, "fehler": _t("Das Projekt wird noch geladen – bitte gleich noch einmal.")}
+                if not ok:
+                    self.verlauf = {"rueck": [], "vor": []}
+                    self._verlauf_speichern()
+                    return {"ok": False, "fehler": _t("Rückgängig ist nicht mehr möglich: Musik, Länge oder Szenen "
+                                                      "wurden inzwischen geändert."), "gemacht": gemacht}
+                self.verlauf[von].pop()
+                jetzt = self._zustand()
+                self._setze_zustand(e["stand"])
+                self.verlauf[nach].append(dict(e, stand=jetzt))
+                gemacht.append(self._verlauf_text(e))
+            self._verlauf_speichern()
+            return {"ok": bool(gemacht), "gemacht": gemacht}
+
+    def _verlauf_text(self, e):
+        t = _t(e["text"])
+        if e.get("zeit") is not None:
+            m, sek = divmod(int(round(e["zeit"])), 60)
+            t += " " + _t("(bei {t})", t=f"{m}:{sek:02d}")
+        return t
+
+    def verlauf_info(self):
+        r, v = self.verlauf["rueck"], self.verlauf["vor"]
+        return {"rueck": [self._verlauf_text(e) for e in reversed(r)][:25],
+                "vor": [self._verlauf_text(e) for e in reversed(v)][:25], "n_rueck": len(r), "n_vor": len(v)}
+
     # ------------------------------------------------------------------ „fertig bis hier“
     # Alles bis zu diesem Schnitt gilt als fertig: Auffüllen, Ausgleichen und Neuplanen ändern dort nichts mehr.
     # Die Markierung wandert mit jeder Bearbeitung nach hinten mit (nie zurück) und lässt sich von Hand setzen.
@@ -1002,6 +1136,7 @@ class Projekt:
         """Darf die Automatik diesen Schnitt ändern? Nicht, wenn gesperrt oder im fertigen Teil."""
         return bool(s.get("lock") or s.get("_fix"))
 
+    @aktion("„Fertig bis hier“ verschoben")
     def fertig_setzen(self, sid):
         """Markierung von Hand setzen (auch zurück); sid=None hebt sie auf."""
         with self.lock:
@@ -1060,6 +1195,7 @@ class Projekt:
                             "soll": round(100 * ref.get(kw, 0.0) / D), "diff": round(d, 1)})
         return sorted(out, key=lambda x: -abs(x["diff"]))
 
+    @aktion("Anteile übernommen")
     def anteile_ok(self):
         with self.lock:
             tl, _ = self.relayout()
@@ -1067,6 +1203,7 @@ class Projekt:
             self.save()
             return {"ok": True}
 
+    @aktion("Anteile ausgeglichen")
     def anteile_ausgleichen(self):
         """Hinter „fertig bis hier“ Schnitte zu stark vertretener Kategorien gegen Schnitte zu schwach vertretener tauschen."""
         with self.lock:
@@ -1269,7 +1406,7 @@ class Projekt:
                           "atmo": s.get("atmo"), "ton": s.get("ton", ""), "fertig": bool(s.get("_fix"))})
         lay = self.layout_info()
         return {"shots": shots, "probleme": probs, "differenz": diff, "absenken": self.absenkung_db(),
-                "originalton": self.d["schnitt"].get("originalton", "auto"),
+                "originalton": self.d["schnitt"].get("originalton", "auto"), "verlauf": self.verlauf_info(),
                 "fertig_bis": self.d.get("fertig_bis") if self.fix_index(tl) >= 0 else None,
                 "abweichungen": self.abweichungen(tl), "ende_weg": int(self.d.get("ende_weg") or 0),
                 "ende_auto": bool(self.d.get("ende_auto")), "k": int(self.d["schnitt"].get("k") or 0) or self.k_default(),
@@ -1343,6 +1480,7 @@ class Projekt:
         return z["clips"] if z else []
 
     # Bearbeitung
+    @aktion("Ausschnitt verschoben")
     def shot_slip(self, sid, src, force=False):
         with self.lock:
             tl, _ = self.relayout()
@@ -1487,6 +1625,7 @@ class Projekt:
         if settle:
             self.settle(tl)
 
+    @aktion("Länge geändert")
     def shot_laenge(self, sid, k, force=False):
         with self.lock:
             tl, _ = self.relayout()
@@ -1544,6 +1683,7 @@ class Projekt:
             self.save()
             return {"ok": True}
 
+    @aktion("Reihenfolge geändert")
     def shot_move(self, sid, index):
         with self.lock:
             sh, tl = self.find_shot(sid)
@@ -1561,6 +1701,7 @@ class Projekt:
             self.save()
             return {"ok": True}
 
+    @aktion("Andere Stelle gewählt")
     def shot_anders(self, sid):
         with self.lock:
             tl, _ = self.relayout()
@@ -1599,6 +1740,7 @@ class Projekt:
                             "zeit": c.start.strftime("%H:%M") if c.start else ""})
             return {"szene": sh.get("szene"), "clips": out}
 
+    @aktion("Clip eingefügt")
     def shot_einfuegen(self, sid, clip=None):
         """Einen weiteren Ausschnitt aus derselben Szene direkt hinter diesem Schnitt einfügen (gesperrt). Platz dafür
         machen ungesperrte Schnitte anderer Szenen (die Szene bekommt also mehr Zeit); die Filmlänge bleibt."""
@@ -1701,6 +1843,7 @@ class Projekt:
             out["sekunden"] = sek
             return out
 
+    @aktion("Schnitt entfernt")
     def shot_entfernen(self, sid, sperren_stelle=True, ausgleich="rest"):
         ausgleich = ausgleich if ausgleich in self.AUSGLEICH else "rest"
         with self.lock:
@@ -1731,6 +1874,7 @@ class Projekt:
             self.save()
             return {"ok": True, "rest": rest, "log": log}
 
+    @aktion("Kürzung am Ende zurückgenommen")
     def ende_zuruecknehmen(self):
         """„Film kürzer“ aus der Timeline rückgängig: die Musik läuft wieder bis zu ihrem Ende, die freien Takte werden
         hinter „fertig bis hier“ verteilt."""
@@ -1744,6 +1888,7 @@ class Projekt:
             self.save()
             return {"ok": True}
 
+    @aktion("Sperre geändert")
     def shot_sperren(self, sid, lock):
         with self.lock:
             tl, _ = self.relayout()
@@ -1758,6 +1903,7 @@ class Projekt:
                 self.save()
             return {"ok": sh is not None}
 
+    @aktion("Aufgefüllt")
     def auffuellen(self):
         with self.lock:
             tl, diff = self.relayout()
@@ -1881,6 +2027,7 @@ class Projekt:
                 s["ton_info"] = {"grund": "unauffaellig"}
         return len(cands[:limit])
 
+    @aktion("Originalton geändert")
     def shot_ton(self, sid, ton):
         """Originalton eines einzelnen Schnitts: "" automatisch, "an", "aus". Wird gesperrt (bleibt beim Neuplanen)."""
         ton = ton if ton in ("an", "aus") else ""

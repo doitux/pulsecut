@@ -379,6 +379,17 @@ def api_post(path, b, raw=None, ctype=""):
                 k["gewicht"] = float(np.clip(float(b[k["id"]]), 0, 5))
         pr.save()
         return {"anteile": anteile(pr)}
+    if path == "/api/schnitt" and b and set(b) <= {"originalton", "absenken"}:
+        # Originalton-Schalter (auch in der Timeline): rückgängig machbar
+        from .projekt import aktion
+
+        def ton(p_):
+            for k in ("originalton", "absenken"):
+                if k in b:
+                    p_.d["schnitt"][k] = b[k]
+            p_.save()
+        aktion("Originalton (ganzer Film) geändert")(ton)(pr)
+        return api_get("/api/schnitt", {})
     if path == "/api/schnitt":
         s = pr.d["schnitt"]
         for k in ("k", "raster", "uebergang", "blende", "bewegung", "originalton", "absenken", "titel", "untertitel",
@@ -430,6 +441,10 @@ def api_post(path, b, raw=None, ctype=""):
         raise KeyError(path)
     if path == "/api/auffuellen":
         return pr.auffuellen()
+    if path == "/api/verlauf/zurueck":
+        return pr.rueckgaengig(int(b.get("schritte", 1)))
+    if path == "/api/verlauf/vor":
+        return pr.wiederholen(int(b.get("schritte", 1)))
     if path == "/api/fertig":
         return pr.fertig_setzen(b.get("id"))
     if path == "/api/anteile/ok":

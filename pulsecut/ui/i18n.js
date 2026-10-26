@@ -11,6 +11,20 @@ function T(s, ...v) {
   return v.length ? out.replace(/\{(\d+)\}/g, (_, i) => v[+i]) : out;
 }
 const EN = {
+ "Rückgängig (Strg+Z)": "Undo (Ctrl+Z)",
+ "Wiederholen (Strg+Y)": "Redo (Ctrl+Y)",
+ "Verlauf": "History",
+ "Rückgängig: {0} (Strg+Z)": "Undo: {0} (Ctrl+Z)",
+ "Nichts rückgängig zu machen": "Nothing to undo",
+ "Wiederholen: {0} (Strg+Y)": "Redo: {0} (Ctrl+Y)",
+ "Nichts zu wiederholen": "Nothing to redo",
+ "Rückgängig: ": "Undone: ",
+ "Wiederholt: ": "Redone: ",
+ "{0} Schritte": "{0} steps",
+ "Klick auf eine Aktion macht sie und alles danach rückgängig – oder stellt sie wieder her.": "Click an action to undo it and everything after it – or to restore it.",
+ "Wiederholen": "Redo",
+ "Jetziger Stand": "Current state",
+ "Noch keine Bearbeitung.": "No edits yet.",
  "Aufnahme wird übergeben …": "Handing over the recording …",
  "Spracheingabe": "Voice input",
  "KI wird gestartet …": "Starting the AI …",

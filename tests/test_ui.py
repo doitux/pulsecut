@@ -397,6 +397,27 @@ def test_workflow(app):
         assert tl8["differenz"] == 0 and not [p for p in tl8["probleme"] if p["art"] in ("ueberlappung", "rand")]
         pg.wait_for_selector("#tfix:not(.leer)")
         assert pg.is_visible(f".shot.fertig[data-id='{ids8[0]}']")
+        # undo (button) brings the removed shot back exactly, redo (Ctrl+Y) removes it again, Ctrl+Z undoes again
+        with pg.expect_response(lambda r: "/api/verlauf/zurueck" in r.url):
+            pg.click("#tundo")
+        pg.wait_for_selector(f".shot[data-id='{victim['id']}']")
+        tl_u = pg.evaluate("fetch('/api/timeline').then(r=>r.json())")
+        assert [s_["id"] for s_ in tl_u["shots"]] == [s_["id"] for s_ in tl7["shots"]]
+        assert tl_u["verlauf"]["vor"] and not pg.is_disabled("#tredo")
+        pg.click("#tsh")                                   # focus on the timeline, not on an input
+        with pg.expect_response(lambda r: "/api/verlauf/vor" in r.url):
+            pg.keyboard.press("Control+y")
+        pg.wait_for_function(f"!document.querySelector(\".shot[data-id='{victim['id']}']\")")
+        with pg.expect_response(lambda r: "/api/verlauf/zurueck" in r.url):
+            pg.keyboard.press("Control+z")
+        pg.wait_for_selector(f".shot[data-id='{victim['id']}']")
+        pg.click("#tverl")
+        pg.wait_for_selector("#mbox .vz")
+        snap("13_verlauf")
+        with pg.expect_response(lambda r: "/api/verlauf/vor" in r.url):
+            pg.click("#mbox .vz.vor")                       # redo from the list
+        pg.wait_for_function(f"!document.querySelector(\".shot[data-id='{victim['id']}']\")")
+        pg.wait_for_timeout(500)
         # film shorter, then undo
         pg.keyboard.press("Delete")
         pg.wait_for_selector(".entfwahl button[data-v=kuerzer]")

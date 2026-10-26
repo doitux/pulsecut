@@ -925,6 +925,7 @@ R.timeline = {
         <div id="tlinfo"></div></div>
       <div class="tl"><div class="row" style="padding:8px 10px;border-bottom:1px solid var(--line)"><span class="meta">${T("Zoom")}</span><input type="range" id="tzoom" min="4" max="80" step="1">
         <span class="lab" style="margin-left:14px">${T("Originalton")}</span><span id="tton"></span><span style="flex:1"></span>
+        <span class="verlauf"><button id="tundo" title="${T("Rückgängig (Strg+Z)")}">↶</button><button id="tredo" title="${T("Wiederholen (Strg+Y)")}">↷</button><button id="tverl" title="${T("Verlauf")}">☰</button></span>
         <button id="tneu">${T("Neu planen (🔒 bleibt)")}</button><button id="talles">${T("Alles neu planen")}</button><button id="tfill">${T("Auffüllen")}</button></div>
         <div class="tlscroll" id="tls"><div class="tlinner" id="tli"><div class="ruler" id="trul"></div><div class="shots" id="tsh"></div><canvas class="mus" id="tmus"></canvas><div class="playhead" id="tph"></div></div></div></div>
       <div id="insp"></div>${weiter("export", T("Weiter zum Fertigstellen"))}`;
@@ -937,10 +938,17 @@ R.timeline = {
     $("#tneu").onclick = () => this.replan(true);
     $("#talles").onclick = async () => { if (await frage(T("Alles neu planen? Auch deine gesperrten Änderungen gehen verloren."), T("Alles neu"))) this.replan(false); };
     $("#tfill").onclick = async () => { await api("/api/auffuellen", {}); await this.load(); };
+    $("#tundo").onclick = () => this.verlauf("zurueck");
+    $("#tredo").onclick = () => this.verlauf("vor");
+    $("#tverl").onclick = () => this.verlaufListe();
     $("#tzoom").oninput = e => { pps = +e.target.value; this.drawTL(); };
     $("#tli").addEventListener("mousedown", e => { if (e.target.closest(".shot")) return; const r = $("#tli").getBoundingClientRect(); PLY.seek((e.clientX - r.left) / pps); });
     this.key = e => { if (step !== "timeline" || e.target.matches("input,textarea,select")) return; if (e.code === "Space") { e.preventDefault(); PLY.toggle(); this.btn(); } if (e.code === "ArrowRight") $("#pnext").click(); if (e.code === "ArrowLeft") $("#pprev").click();
-      if ((e.code === "Delete" || e.code === "Backspace") && SEL && $("#modal").hidden) { e.preventDefault(); this.entfernen(SEL); } };
+      if ((e.code === "Delete" || e.code === "Backspace") && SEL && $("#modal").hidden) { e.preventDefault(); this.entfernen(SEL); }
+      if ((e.ctrlKey || e.metaKey) && $("#modal").hidden) {
+        if (e.code === "KeyZ" && !e.shiftKey) { e.preventDefault(); this.verlauf("zurueck"); }
+        else if (e.code === "KeyY" || (e.code === "KeyZ" && e.shiftKey)) { e.preventDefault(); this.verlauf("vor"); }
+      } };
     document.addEventListener("keydown", this.key);
     await this.load();
   },
@@ -961,7 +969,7 @@ R.timeline = {
     if (!pps) { const w = ($("#tls").clientWidth || 900) - 20; pps = Math.max(4, Math.min(80, Math.round(w / TL.dauer * 2.2))); }
     $("#tzoom").value = pps;
     if (SEL && !TL.shots.find(s => s.id === SEL)) SEL = null;
-    this.info(); this.tonSchalter(); this.drawTL(); if (SEL) this.inspect(SEL); else $("#insp").innerHTML = "";
+    this.info(); this.tonSchalter(); this.verlaufKnoepfe(); this.drawTL(); if (SEL) this.inspect(SEL); else $("#insp").innerHTML = "";
   },
   tonSchalter() {
     const el = $("#tton"); if (!el) return;
@@ -1006,6 +1014,34 @@ R.timeline = {
       };
       document.addEventListener("mousemove", mv); document.addEventListener("mouseup", up);
     };
+  },
+  verlaufKnoepfe() {
+    const v = (TL && TL.verlauf) || {rueck: [], vor: []}, u = $("#tundo"), r = $("#tredo"); if (!u) return;
+    u.disabled = !v.rueck.length; r.disabled = !v.vor.length;
+    u.title = v.rueck.length ? T`Rückgängig: ${v.rueck[0]} (Strg+Z)` : T("Nichts rückgängig zu machen");
+    r.title = v.vor.length ? T`Wiederholen: ${v.vor[0]} (Strg+Y)` : T("Nichts zu wiederholen");
+    $("#tverl").disabled = !v.rueck.length && !v.vor.length;
+  },
+  async verlauf(richtung, schritte = 1) {
+    const v = (TL && TL.verlauf) || {rueck: [], vor: []};
+    if (!(richtung === "zurueck" ? v.rueck : v.vor).length) return;
+    const r = await api("/api/verlauf/" + richtung, {schritte});
+    if (!r.ok) { if (r.fehler) toast(r.fehler, 6000); await this.load(); return; }
+    await this.load();
+    const g = r.gemacht || [];
+    toast((richtung === "zurueck" ? T("Rückgängig: ") : T("Wiederholt: ")) + (g.length > 1 ? T`${g.length} Schritte` : g[0] || ""));
+  },
+  async verlaufListe() {
+    // die letzten Aktionen: zurück bis zu einer bestimmten, oder wieder vor
+    const v = TL.verlauf;
+    const zeile = (t, i, art) => `<button class="vz ${art}" data-a="${art}" data-n="${i + 1}"><span>${art === "vor" ? "↷" : "↶"}</span>${esc(t)}</button>`;
+    const html = `<p><b>${T("Verlauf")}</b><br><span class="meta">${T("Klick auf eine Aktion macht sie und alles danach rückgängig – oder stellt sie wieder her.")}</span></p>
+      <div class="verlaufliste">${v.vor.length ? `<div class="sgrp">${T("Wiederholen")}</div>` + v.vor.map((t, i) => [t, i]).reverse().map(([t, i]) => zeile(t, i, "vor")).join("") : ""}
+      <div class="sgrp">${T("Jetziger Stand")}</div>
+      ${v.rueck.map((t, i) => zeile(t, i, "zurueck")).join("") || `<div class="meta">${T("Noch keine Bearbeitung.")}</div>`}</div>`;
+    const p = modal(html, [{t: T("Schließen"), v: null}]);
+    $$("#mbox .vz").forEach(b => b.onclick = () => { $("#modal").hidden = true; this.verlauf(b.dataset.a, +b.dataset.n); });
+    await p;
   },
   async replan(keep) { await api("/api/plan", {behalten: keep}); await this.load(); toast(T("Neu geplant")); },
   info() {
