@@ -824,12 +824,23 @@ R.gewichtung = {
       $$(".szmv button", r).forEach(b => b.onclick = () => { const ids = E.szenen.map(x => x.id); ids.splice(i, 1); ids.splice(i + +b.dataset.d, 0, z.id); this.sz({folge: ids}, z.id); });
       $(".sztog", r).onclick = () => { openSz.has(z.id) ? openSz.delete(z.id) : openSz.add(z.id); this.scenes(); };
       $(".szpics", r).onclick = () => szeneAnsehen(z.id, null, EZ_GW);
-      r.ondragstart = e => { dragId = z.id; e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", z.id); };
+      r.ondragstart = e => {
+        dragId = z.id; e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", z.id);
+        // eigenes Vorschaubild: genau diese eine Zeile (der Browser nimmt sonst je nach Lage auch die Zeilen darunter mit)
+        const g = r.cloneNode(true), bb = r.getBoundingClientRect();
+        g.className = "szrow szgeist"; g.style.width = bb.width + "px"; g.style.borderLeftColor = z.farbe;
+        $$(".szclips", g).forEach(x => x.remove());
+        $$("select", g).forEach(x => x.classList.add("nativ"));
+        document.body.appendChild(g);
+        e.dataTransfer.setDragImage(g, Math.max(0, e.clientX - bb.left), Math.max(0, Math.min(g.offsetHeight, e.clientY - bb.top)));
+        setTimeout(() => g.remove(), 0);
+        setTimeout(() => r.classList.add("zieht"), 0);
+      };
       r.ondragover = e => { if (!dragId || dragId === z.id) return; e.preventDefault(); const bb = r.getBoundingClientRect(); const vor = e.clientY < bb.top + bb.height / 2; r.classList.toggle("drop-vor", vor); r.classList.toggle("drop-nach", !vor); };
       r.ondragleave = () => r.classList.remove("drop-vor", "drop-nach");
       r.ondrop = e => { e.preventDefault(); const vor = r.classList.contains("drop-vor"); r.classList.remove("drop-vor", "drop-nach"); if (!dragId || dragId === z.id) return;
         const ids = E.szenen.map(x => x.id).filter(x => x !== dragId); ids.splice(ids.indexOf(z.id) + (vor ? 0 : 1), 0, dragId); const mid = dragId; dragId = null; this.sz({folge: ids}, mid); };
-      r.ondragend = () => { dragId = null; };
+      r.ondragend = () => { dragId = null; r.classList.remove("zieht"); };
       if (openSz.has(z.id)) {
         const p = document.createElement("div"); p.className = "szclips";
         for (const c of z.clipliste) {

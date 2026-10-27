@@ -307,6 +307,19 @@ def test_workflow(app):
         names = dict(opts)
         last_concert = max(i for i, n in enumerate(order) if n == names[konzert])
         assert all(i > last_concert for i, n in enumerate(order) if n == names[foto])
+        # dragging at the handle: the drag picture is exactly the one row, not the rows below it
+        pg.evaluate("""() => { const o = DataTransfer.prototype.setDragImage; window._geist = null;
+            DataTransfer.prototype.setDragImage = function (el, x, y) { const b = el.getBoundingClientRect();
+              window._geist = {zeilen: el.querySelectorAll('.szrow').length + (el.classList.contains('szrow') ? 1 : 0),
+                               h: b.height, text: el.innerText}; return o.call(this, el, x, y); }; }""")
+        row = pg.locator(".szrow").nth(1)
+        h0 = row.bounding_box()["height"]
+        vorher = pg.eval_on_selector_all(".szrow", "e=>e.map(x=>x.dataset.id)")
+        row.locator(".grip").drag_to(row, target_position={"x": 40, "y": 10})
+        g = pg.evaluate("window._geist")
+        assert g and g["zeilen"] == 1 and abs(g["h"] - h0) < 4, (g, h0)
+        assert pg.eval_on_selector_all(".szrow", "e=>e.map(x=>x.dataset.id)") == vorher   # dropped on itself: no change
+        assert not pg.query_selector(".szrow.zieht, .szgeist")
         pg.click(".szrow .sztog")
         pg.wait_for_selector(".szclips")
         snap("07_gewichtung")

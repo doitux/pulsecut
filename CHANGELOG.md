@@ -6,6 +6,9 @@ tests is published as a [nightly test build](https://github.com/doitux/pulsecut/
 The preview versions 1.0.0–1.0.10 published before have been withdrawn; their changes are listed below by date.
 
 ## Unreleased (nightly)
+- Step 7: when a scene is dragged at its handle ⠿, the picture under the mouse now shows just that scene – before, it
+  could look as if all scenes below were dragged along (only the one scene was ever moved). The row being dragged is
+  shown faded until it is dropped.
 - Scene recognition (step 6): **correct single clips**. Clicking the pictures of a scene opens its clips – each one
   can be played right there and moved to another keyword on its own (the scene is split), or set back to
   automatic. Every keyword has “⇆ Get clips here”: it shows the clips of the keywords right before and after (or all
