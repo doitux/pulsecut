@@ -6,6 +6,14 @@ tests is published as a [nightly test build](https://github.com/doitux/pulsecut/
 The preview versions 1.0.0–1.0.10 published before have been withdrawn; their changes are listed below by date.
 
 ## Unreleased (nightly)
+- Step 7, weighting: **above 1× the slider also takes weaker passages.** Up to 1× Pulsecut only uses good passages
+  (sharp, steady, bright enough); above that it gradually adds blurrier, shaky or darker ones and more shots per
+  clip – at 3× everything the clips contain (never the same passage twice). A clip set to “Important” may always
+  give its weaker passages. Next to each slider: “maximum – all material is used” (with a tip how to get more),
+  “at the limit – further right, weaker passages are added too” and “incl. weaker passages”.
+  Note: keywords that already had a weight above 1× now get more (and weaker) material than before.
+- Step 7: before the film is planned, every scene shows what the weighting gives it (“planned: ≈ 2 shots · 4 s”)
+  instead of “not in the film yet”; the clips show “film not planned yet”.
 - Step 7: when a scene is dragged at its handle ⠿, the picture under the mouse now shows just that scene – before, it
   could look as if all scenes below were dragged along (only the one scene was ever moved). The row being dragged is
   shown faded until it is dropped.

@@ -793,12 +793,23 @@ R.gewichtung = {
     const l = $("#gwl"); if (!l || !GW.erkennung) return;
     const col = GW.erkennung.farben;
     l.innerHTML = GW.stichworte.map(k => `<div class="gewicht" data-k="${k.id}"><span class="dot" style="background:${col[k.id]}"></span><span>${esc(k.name)}</span>
-      <input type="range" min="0" max="3" step="0.1" value="${k.gewicht}"><span class="meta gv">${k.gewicht.toFixed(1)}×</span><span class="meta ga">${GW.anteile[k.id] ? "≈ " + fmt(GW.anteile[k.id]) + " min" : "–"}</span></div>`).join("");
+      <input type="range" min="0" max="3" step="0.1" value="${k.gewicht}"><span class="meta gv">${k.gewicht.toFixed(1)}×</span><span class="meta ga">${GW.anteile[k.id] ? "≈ " + fmt(GW.anteile[k.id]) + " min" : "–"}${this.material(k.id)}</span></div>`).join("");
     $$(".gewicht", l).forEach(row => {
       const r = $("input", row);
       r.oninput = () => $(".gv", row).textContent = (+r.value).toFixed(1) + "×";
-      r.onchange = async () => { const k = GW.stichworte.find(x => x.id === row.dataset.k); k.gewicht = +r.value; const res = await api("/api/gewichte", {[k.id]: +r.value}); GW.anteile = res.anteile; this.weights(); };
+      r.onchange = async () => { const k = GW.stichworte.find(x => x.id === row.dataset.k); k.gewicht = +r.value; const res = await api("/api/gewichte", {[k.id]: +r.value}); this.uebernehmen(res); this.weights(); this.scenes(); };
     });
+  },
+  uebernehmen(res) { for (const f of ["anteile", "material", "plan", "hat_film"]) if (f in res) GW[f] = res[f]; },
+  material(kw) {   // Hinweis am Regler: am Material-Limit? mit schwächeren Stellen?
+    const m = (GW.material || {})[kw]; if (!m) return "";
+    const tipp = T("Mehr Material: weitere Clips in Schritt 6 mit „⇆ Clips hierher holen“ zuordnen oder unten einen Clip auf „Wichtig“ setzen.");
+    const teile = [];
+    if (m.art === "leer") teile.push(`<span class="gmat warn" title="${tipp}">${T("kein brauchbares Material")}</span>`);
+    else if (m.art === "max") teile.push(`<span class="gmat warn" title="${tipp}">${T("Maximum – das ganze Material ist verwendet")}</span>`);
+    else if (m.art === "limit") teile.push(`<span class="gmat" title="${T("Bei 1× nimmt Pulsecut nur gute Stellen. Darüber kommen nach und nach auch unschärfere, verwackelte oder dunklere Stellen dazu – bei 3× alles, was in den Clips steckt.")}">${T("am Limit – weiter rechts kommen auch schwächere Stellen dazu")}</span>`);
+    if (m.schwach) teile.push(`<span class="gmat" title="${T("Darunter sind auch unschärfere, verwackelte oder dunklere Stellen – im Film prüfen.")}">${T("inkl. schwächerer Stellen")}</span>`);
+    return teile.length ? " · " + teile.join(" · ") : "";
   },
   blocks() {
     const b = $("#blockzeile"); if (!b) return;
@@ -806,7 +817,7 @@ R.gewichtung = {
     b.innerHTML = `<span class="meta">${T("Alle Szenen von")}</span><select id="bk1">${opts}</select><span class="meta">${T("setzen")}</span><select id="bk2"><option value="__anfang__">${T("an den Anfang")}</option><option value="__ende__">${T("ans Ende")}</option>${GW.stichworte.map(k => `<option value="${k.id}">${T`hinter „${esc(k.name)}“`}</option>`).join("")}</select><button id="bkgo">${T("Verschieben")}</button>`;
     $("#bkgo").onclick = async () => { const r = await api("/api/block", {kw: $("#bk1").value, nach: $("#bk2").value}); GW.erkennung = r.erkennung; this.scenes(); toast(T("Szenen verschoben")); };
   },
-  async sz(body, changed) { const r = await api("/api/szene", body); GW.erkennung = r.erkennung; GW.anteile = r.anteile; this.weights(); this.scenes(changed); },
+  async sz(body, changed) { const r = await api("/api/szene", body); GW.erkennung = r.erkennung; this.uebernehmen(r); this.weights(); this.scenes(changed); },
   scenes(changed) {
     const box = $("#szl"); if (!box || !GW.erkennung) return;
     const E = GW.erkennung, kwname = Object.fromEntries(GW.stichworte.map(k => [k.id, k.name]));
@@ -815,7 +826,11 @@ R.gewichtung = {
     E.szenen.forEach((z, i) => {
       const r = document.createElement("div");
       r.className = "szrow" + (z.menge === "raus" ? " raus" : "") + (changed === z.id ? " chg" : ""); r.draggable = !openSz.has(z.id); r.dataset.id = z.id; r.style.borderLeftColor = z.farbe;
-      const film = z.schnitte ? (z.schnitte === 1 ? T`im Film: <b>1 Schnitt</b> · ${komma(z.sekunden)} s` : T`im Film: <b>${z.schnitte} Schnitte</b> · ${komma(z.sekunden)} s`) : T("noch nicht im Film");
+      const plan = (GW.plan || {})[z.id] || [0, 0];
+      const film = z.schnitte ? (z.schnitte === 1 ? T`im Film: <b>1 Schnitt</b> · ${komma(z.sekunden)} s` : T`im Film: <b>${z.schnitte} Schnitte</b> · ${komma(z.sekunden)} s`)
+        : GW.hat_film ? T("noch nicht im Film")
+        : plan[0] ? (plan[0] === 1 ? T`geplant: ≈ 1 Schnitt · ${komma(plan[1])} s` : T`geplant: ≈ ${plan[0]} Schnitte · ${komma(plan[1])} s`)
+        : z.menge === "raus" ? T("raus – kommt nicht in den Film") : T("geplant: kein Schnitt (zu wenig Platz oder Material)");
       r.innerHTML = `<span class="grip">⠿</span><span class="szmv"><button data-d="-1" ${i ? "" : "disabled"}>▲</button><button data-d="1" ${i < E.szenen.length - 1 ? "" : "disabled"}>▼</button></span>
         <div><select class="zkw" title="${T("Stichwort dieser Szene ändern")}">${kwOptionen(GW.stichworte, z.kw, z.clipliste.some(c => c.kw_manuell))}</select> · ${esc(z.zeit)} · ${pl(z.n, N("Clip"), N("Clips"))}<br><span class="meta">${film}</span><button class="klein sztog" style="margin-left:6px">${openSz.has(z.id) ? T("Clips ▴") : T("Clips ▾")} ${z.clipliste.filter(c => c.schnitte.length).length}/${z.n}</button></div>
         <div class="szpics">${z.bilder.map(b => `<img loading="lazy" src="${b}">`).join("")}</div>${seg("menge", MENGE(), z.menge)}`;
@@ -847,7 +862,7 @@ R.gewichtung = {
           const e = document.createElement("div"); e.className = "szc" + (c.schnitte.length ? " drin" : "") + (c.prio === "raus" ? " raus" : "");
           e.innerHTML = `<div class="strip" style="height:44px">${c.bilder.map(b => `<img loading="lazy" src="${b}" style="height:44px">`).join("")}</div>
             <div class="meta" style="margin-top:4px"><b>${c.zeit}</b> · ${fmt(c.dauer)} · ${c.hoch ? T("hochkant") : T("quer")} · ${esc(c.name)}</div>
-            <div class="meta">${c.schnitte.length ? `<b>${T`${c.schnitte.length}× im Film`}</b>` : (c.nutzbar ? T("nicht im Film") : T("unbrauchbar"))}</div>
+            <div class="meta">${c.schnitte.length ? `<b>${T`${c.schnitte.length}× im Film`}</b>` : (!c.nutzbar ? T("unbrauchbar") : GW.hat_film ? T("nicht im Film") : T("Film noch nicht geplant"))}</div>
             <div class="row" style="margin-top:4px">${seg("prio", [["raus", T("Raus"), "raus"], ["", T("Auto")], ["hoch", T("Wichtig"), "hoch"]], c.prio)}</div>
             <div class="row" style="margin-top:4px"><span class="meta">${T("gehört zu")}</span><select class="ckw">${kwOptionen(GW.stichworte, c.kw || z.kw, !!c.kw_manuell)}</select></div>
             <div class="szshots">${c.schnitte.map(u => `<figure><img src="${u.bild || ""}"><button data-id="${u.id}" title="${T("diesen Schnitt rausnehmen")}">✕</button><figcaption>${T("Film")} ${fmt(u.tl)} · ${komma(u.dur.toFixed(1))} s</figcaption></figure>`).join("")}

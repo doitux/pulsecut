@@ -120,15 +120,28 @@ class Planer:
     def usable(self, c, m):
         return c.prio != "raus" and c.segs and (m > 0 or c.prio == "hoch") and c.dur > 1.2
 
-    def per_clip(self, c, m):
-        return MAX_PER_CLIP + (1 if c.prio == "hoch" else 0) + (1 if m >= 1.7 else 0) + (1 if m >= 2.5 else 0)
+    def lockerung(self, kw):
+        """Wie weit ein Stichwort auch schwächere Stellen (unscharf, verwackelt, dunkel) nehmen darf – über den Regler:
+        0 bis 1× (nur gute Stellen), dann gleitend bis 1 bei 3× (alles, was in den Clips steckt)."""
+        return float(np.clip((float(self.w.get(kw, 1.0)) - 1.0) / 2.0, 0.0, 1.0))
+
+    def per_clip(self, c, m, kw=None, r=None):
+        r = (self.lockerung(kw) if kw is not None else 0.0) if r is None else r
+        if r >= 0.999:
+            return 10 ** 6      # 3×: so viele Ausschnitte, wie der Clip hergibt
+        return MAX_PER_CLIP + (1 if c.prio == "hoch" else 0) + (1 if m >= 1.7 else 0) + (1 if m >= 2.5 else 0) \
+            + int(round(2 * r))
 
     def L_of(self, nunits):
         u = np.diff(self.units)
         return float(np.median(u)) * nunits if len(u) else 2.0 * nunits
 
-    def capacity(self, z, L):
+    def capacity(self, z, L, r=None, nur_gut=False):
+        """Wie viele Ausschnitte die Szene hergibt. r = Lockerung (None: nach dem Regler des Stichworts, 0: wie bei 1×,
+        1: alles wie bei 3×) – mehr Ausschnitte je Clip und auch schwächere Stellen. Clips auf „Wichtig“ dürfen immer
+        auch schwächere Stellen geben. nur_gut: mehr Ausschnitte je Clip nach dem Regler, aber nur gute Stellen."""
         m = MENGE.get(z.get("menge", ""), 1.0)
+        r_kw = self.lockerung(z["kw"]) if r is None else float(r)
         cap = 0
         need = L + self.xf + GAP
         for c in z["clips"]:
@@ -137,9 +150,34 @@ class Planer:
             free = max(0.0, c.dur - 2 * EDGE - sum(b - a for a, b in c.excl))
             n_fit = int(free // need) if free >= L * 0.98 + self.xf else 0
             good = max(c.good_sec, 0.0)
-            n_good = max(1 if good >= 0.5 * L else 0, int(good // need))
-            cap += min(self.per_clip(c, m), n_fit, max(n_good, 1 if c.prio == "hoch" and n_fit else 0))
+            n_q = max(1 if good >= 0.5 * L else 0, int(good // need), 1 if c.prio == "hoch" and n_fit else 0)
+            rc = 0.0 if nur_gut else (1.0 if c.prio == "hoch" and r is None else r_kw)
+            n_q += int(round(rc * max(0, n_fit - n_q)))      # schwächere Stellen dazu, je nach Regler
+            cap += min(self.per_clip(c, m, r=r_kw), n_fit, n_q)
         return cap
+
+    def material_status(self, alloc, L):
+        """Je Stichwort: am Material-Limit? Mit schwächeren Stellen? (für die Anzeige am Regler)"""
+        out = {}
+        for z in self.scenes:
+            st = out.setdefault(z["kw"], {"n": 0, "cap": 0, "gut": 0, "voll": 0})
+            st["n"] += int(alloc.get(z["id"], 0))
+            st["cap"] += self.capacity(z, L)
+            st["gut"] += self.capacity(z, L, nur_gut=True)
+            st["voll"] += self.capacity(z, L, r=1.0)
+        res = {}
+        for kw, st in out.items():
+            if float(self.w.get(kw, 1.0)) <= 0:
+                continue
+            art = ""
+            if st["voll"] == 0:
+                art = "leer"
+            elif st["n"] >= st["voll"]:
+                art = "max"
+            elif st["n"] >= st["cap"]:
+                art = "limit"
+            res[kw] = {"art": art, "schwach": st["n"] > st["gut"], "n": st["n"], "max_n": st["voll"]}
+        return res
 
     def mass(self, z):
         m = MENGE.get(z.get("menge", ""), 1.0)
@@ -249,7 +287,7 @@ class Planer:
         while len(picks) < n and cands:
             best, bi = None, -1
             for i, (sc, st, c) in enumerate(cands):
-                if cnt.get(c.name, 0) >= self.per_clip(c, m):
+                if cnt.get(c.name, 0) >= self.per_clip(c, m, z["kw"]):
                     continue
                 a, b = st - self.xf / 2, st + Lsel + self.xf / 2
                 if any(overlaps(a, b, x0, x1) for x0, x1 in taken.get(c.name, [])):

@@ -131,9 +131,11 @@ def videos_info(pr):
             "ohne_zeit": sum(1 for c in pr.clips if c.time_source == "Dateidatum")}
 
 
-def anteile(pr):
-    """Voraussichtliche Sekunden je Stichwort mit den aktuellen Gewichten (schnelle Vorschau der Zuteilung)."""
-    return {k: round(v, 1) for k, v in pr.anteile_soll().items()}
+def gewichtung_info(pr):
+    """Für Schritt 7: Anteile je Stichwort, Material-Hinweise am Regler, Vorschau der Schnitte je Szene."""
+    v = pr.anteile_vorschau()
+    return {"anteile": {k: round(x, 1) for k, x in v["kw"].items()}, "material": v["material"], "plan": v["szene"],
+            "hat_film": bool(pr.d.get("timeline"))}
 
 
 def api_get(path, q):
@@ -153,8 +155,8 @@ def api_get(path, q):
         return {"erkennung": info, "stichworte": pr.d["stichworte"]}
     if path == "/api/gewichtung":
         info = pr.erkennung_info()
-        return {"erkennung": info, "stichworte": pr.d["stichworte"], "anteile": anteile(pr),
-                "dauer": pr.layout.D if pr.layout else 0}
+        return dict({"erkennung": info, "stichworte": pr.d["stichworte"], "dauer": pr.layout.D if pr.layout else 0},
+                    **gewichtung_info(pr))
     if path == "/api/schnitt":
         L = pr.layout
         ul = L.unit_len() if L else 2.0
@@ -367,7 +369,7 @@ def api_post(path, b, raw=None, ctype=""):
     if path == "/api/szene":
         pr.set_scene(b.get("id"), menge=b.get("menge"), folge=b.get("folge") if isinstance(b.get("folge"), list) else None,
                      reset=bool(b.get("zuruecksetzen")))
-        return {"erkennung": pr.erkennung_info(), "anteile": anteile(pr)}
+        return dict({"erkennung": pr.erkennung_info()}, **gewichtung_info(pr))
     if path == "/api/block":
         pr.block_verschieben(b["kw"], b["nach"])
         return {"erkennung": pr.erkennung_info()}
@@ -376,7 +378,7 @@ def api_post(path, b, raw=None, ctype=""):
             if k["id"] in b:
                 k["gewicht"] = float(np.clip(float(b[k["id"]]), 0, 5))
         pr.save()
-        return {"anteile": anteile(pr)}
+        return gewichtung_info(pr)
     if path == "/api/schnitt" and b and set(b) <= {"originalton", "absenken"}:
         # Originalton-Schalter (auch in der Timeline): rückgängig machbar
         from .projekt import aktion

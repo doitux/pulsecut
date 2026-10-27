@@ -234,3 +234,4 @@ select.awquelle{position:absolute!important;width:1px!important;height:1px!impor
 .szk .row{flex-wrap:wrap;min-width:0}.szk .auswahl{flex:1 1 0;min-width:0}
 .ezclip .auswahl{max-width:260px}
 .ezkopf .auswahl{max-width:280px}
+.gewicht .gmat{color:#5b6b85}.gewicht .gmat.warn{color:#a86400;font-weight:600}

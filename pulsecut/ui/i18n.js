@@ -11,6 +11,18 @@ function T(s, ...v) {
   return v.length ? out.replace(/\{(\d+)\}/g, (_, i) => v[+i]) : out;
 }
 const EN = {
+ "Film noch nicht geplant": "film not planned yet",
+ "Mehr Material: weitere Clips in Schritt 6 mit „⇆ Clips hierher holen“ zuordnen oder unten einen Clip auf „Wichtig“ setzen.": "More material: assign further clips in step 6 with “⇆ Get clips here”, or set a clip below to “Important”.",
+ "kein brauchbares Material": "no usable material",
+ "Maximum – das ganze Material ist verwendet": "maximum – all material is used",
+ "Bei 1× nimmt Pulsecut nur gute Stellen. Darüber kommen nach und nach auch unschärfere, verwackelte oder dunklere Stellen dazu – bei 3× alles, was in den Clips steckt.": "At 1× Pulsecut only takes good passages. Above that, blurrier, shaky or darker passages are added step by step – at 3× everything the clips contain.",
+ "am Limit – weiter rechts kommen auch schwächere Stellen dazu": "at the limit – further right, weaker passages are added too",
+ "Darunter sind auch unschärfere, verwackelte oder dunklere Stellen – im Film prüfen.": "This includes blurrier, shaky or darker passages – check them in the film.",
+ "inkl. schwächerer Stellen": "incl. weaker passages",
+ "geplant: ≈ 1 Schnitt · {0} s": "planned: ≈ 1 shot · {0} s",
+ "geplant: ≈ {0} Schnitte · {1} s": "planned: ≈ {0} shots · {1} s",
+ "raus – kommt nicht in den Film": "out – not in the film",
+ "geplant: kein Schnitt (zu wenig Platz oder Material)": "planned: no shot (not enough room or material)",
  "↺ Wieder automatisch (KI entscheidet)": "↺ Automatic again (AI decides)",
  "Wieder automatisch – die KI ordnet neu zu": "Automatic again – the AI assigns it anew",
  "Falsch einsortiert? Über die Auswahl unter jeder Szene in ein anderes Stichwort verschieben, ein neues Stichwort anlegen oder die Szene ganz rausnehmen. Klick auf die Bilder zeigt die einzelnen Clips – dort lässt sich auch nur ein Clip umhängen. Fehlt bei einem Stichwort etwas, hol es dir mit „⇆ Clips hierher holen“.": "Sorted wrongly? Use the selection under each scene to move it to another keyword, create a new keyword or take the scene out completely. Clicking the pictures shows the single clips – there you can also move just one clip. Is something missing for a keyword? Get it with “⇆ Get clips here”.",

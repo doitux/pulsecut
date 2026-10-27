@@ -1188,18 +1188,25 @@ class Projekt:
             return {"ok": True, "fertig_bis": self.d["fertig_bis"]}
 
     # ------------------------------------------------------------------ Anteile der Kategorien
-    def anteile_soll(self):
-        """Sekunden je Stichwort nach der Gewichtung (wie in Schritt 7 angezeigt)."""
+    def anteile_vorschau(self):
+        """Was die Gewichtung ergibt (Schritt 7): Sekunden je Stichwort, Schnitte je Szene und ob ein Stichwort am
+        Material-Limit ist bzw. auch schwächere Stellen nimmt."""
         try:
             p = self.make_planer()
         except RuntimeError:
-            return {}
+            return {"kw": {}, "szene": {}, "material": {}}
         alloc = p.allocate(p.N, {})
         L = p.L_of(p.k)
-        out = {}
+        kw, sz = {}, {}
         for z in self.scenes:
-            out[z["kw"]] = out.get(z["kw"], 0.0) + alloc.get(z["id"], 0) * L
-        return out
+            n = int(alloc.get(z["id"], 0))
+            kw[z["kw"]] = kw.get(z["kw"], 0.0) + n * L
+            sz[z["id"]] = [n, round(n * L, 1)]
+        return {"kw": kw, "szene": sz, "material": p.material_status(alloc, L)}
+
+    def anteile_soll(self):
+        """Sekunden je Stichwort nach der Gewichtung (wie in Schritt 7 angezeigt)."""
+        return self.anteile_vorschau()["kw"]
 
     def anteile_ist(self, tl):
         zkw = {z["id"]: z["kw"] for z in self.scenes}

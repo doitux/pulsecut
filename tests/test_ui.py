@@ -307,6 +307,41 @@ def test_workflow(app):
         names = dict(opts)
         last_concert = max(i for i, n in enumerate(order) if n == names[konzert])
         assert all(i > last_concert for i, n in enumerate(order) if n == names[foto])
+        # before planning, every scene shows what the weighting gives it instead of "not in the film yet"
+        texte = pg.eval_on_selector_all(".szrow .meta", "e=>e.map(x=>x.innerText)")
+        assert any(t.startswith("geplant: ≈" if lang == "de" else "planned: ≈") for t in texte), texte
+        assert not any(t in ("noch nicht im Film", "not in the film yet") for t in texte), texte
+        # hints at the sliders match what the planner says (maximum / limit / weaker passages)
+        hint = {"max": ("Maximum – das ganze Material ist verwendet", "maximum – all material is used"),
+                "limit": ("am Limit – weiter rechts kommen auch schwächere Stellen dazu",
+                          "at the limit – further right, weaker passages are added too"),
+                "leer": ("kein brauchbares Material", "no usable material")}
+        schwach = ("inkl. schwächerer Stellen", "incl. weaker passages")
+        li = 0 if lang == "de" else 1
+
+        def hinweise_passen():
+            gw = pg.evaluate("fetch('/api/gewichtung').then(r=>r.json())")
+            for kid, m in gw["material"].items():
+                t = pg.inner_text(f'.gewicht[data-k="{kid}"] .ga')
+                for art, txt in hint.items():
+                    assert (txt[li] in t) == (m["art"] == art), (kid, m, t)
+                assert (schwach[li] in t) == m["schwach"], (kid, m, t)
+            return gw
+
+        gw = hinweise_passen()
+        assert any(m["art"] == "max" for m in gw["material"].values())   # the one-clip test keyword
+        # slider of the biggest keyword to 3×: more seconds for it, hints still right; back to 1×
+        gross = max(gw["anteile"], key=gw["anteile"].get)
+        slider = f'.gewicht[data-k="{gross}"] input'
+        vorher = gw["anteile"][gross]
+        pg.eval_on_selector(slider, "e=>{e.value=3;e.dispatchEvent(new Event('input'));e.dispatchEvent(new Event('change'))}")
+        pg.wait_for_function(f"fetch('/api/gewichtung').then(r=>r.json()).then(g=>g.anteile['{gross}']>{vorher})", timeout=30000)
+        pg.wait_for_timeout(500)
+        hinweise_passen()
+        pg.eval_on_selector(slider, "e=>{e.value=1;e.dispatchEvent(new Event('input'));e.dispatchEvent(new Event('change'))}")
+        pg.wait_for_function(f"fetch('/api/gewichtung').then(r=>r.json()).then(g=>g.anteile['{gross}']=={vorher})", timeout=30000)
+        pg.wait_for_timeout(500)
+        hinweise_passen()
         # dragging at the handle: the drag picture is exactly the one row, not the rows below it
         pg.evaluate("""() => { const o = DataTransfer.prototype.setDragImage; window._geist = null;
             DataTransfer.prototype.setDragImage = function (el, x, y) { const b = el.getBoundingClientRect();
