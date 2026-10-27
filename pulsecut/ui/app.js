@@ -20,6 +20,81 @@ function seg(name, vals, cur) {
 }
 function onSeg(el, fn) { el.addEventListener("click", e => { const b = e.target.closest("button"); if (b && b.parentElement === el) fn(b.dataset.v); }); }
 
+/* ── Eigene Auswahllisten statt der System-Auswahl ──────────────
+   Die System-Auswahl öffnet unter Linux schon beim Drücken der Maustaste und wählt beim Loslassen den Eintrag, der
+   gerade unter dem Zeiger liegt. Ist unten wenig Platz, liegt die Liste über dem Feld – aus einem Klick wird so eine
+   versehentliche Auswahl. Diese Liste öffnet erst nach dem Klick (Drücken + Loslassen), wählt nur mit einem eigenen
+   Klick auf einen Eintrag und ist nie breiter als ihr Platz. Das <select> bleibt unsichtbar als Quelle dahinter: Wert,
+   Optionen und change-Ereignisse funktionieren wie gewohnt. Jedes <select> (außer class="nativ") wird automatisch
+   umgebaut, auch wenn es später per innerHTML dazukommt. */
+const Auswahl = {
+  offen: null,
+  bauen(sel) {
+    if (sel._aw || sel.classList.contains("nativ")) return;
+    const b = document.createElement("button");
+    b.type = "button"; b.className = "auswahl"; b.title = sel.title || "";
+    b.setAttribute("aria-haspopup", "listbox");
+    b.innerHTML = `<span class="awtext"></span><span class="awpfeil">▾</span>`;
+    sel.classList.add("awquelle"); sel.tabIndex = -1; sel.setAttribute("aria-hidden", "true");
+    sel.after(b); sel._aw = b; b._sel = sel;
+    sel.addEventListener("change", () => this.text(sel));
+    b.addEventListener("click", e => { e.preventDefault(); e.stopPropagation(); if (this.offen && this.offen.b === b) this.zu(); else this.auf(b); });
+    b.addEventListener("keydown", e => { if (["ArrowDown", "ArrowUp", "Enter", " "].includes(e.key)) { e.preventDefault(); this.auf(b); } });
+    this.text(sel);
+  },
+  text(sel) {
+    const o = sel.options[sel.selectedIndex];
+    $(".awtext", sel._aw).textContent = o ? o.textContent : "";
+    sel._aw.disabled = sel.disabled;
+  },
+  auf(b) {
+    this.zu();
+    const sel = b._sel, p = document.createElement("div");
+    p.className = "awliste"; p.setAttribute("role", "listbox");
+    p.innerHTML = [...sel.options].map((o, i) => o.disabled ? `<div class="awtrenn"></div>`
+      : `<button type="button" role="option" data-i="${i}" class="${i === sel.selectedIndex ? "an" : ""}">${esc(o.textContent)}</button>`).join("");
+    document.body.appendChild(p);
+    const r = b.getBoundingClientRect(), unten = innerHeight - r.bottom - 10, oben = r.top - 10;
+    p.style.minWidth = Math.min(r.width, innerWidth - 16) + "px";
+    const nachUnten = unten >= Math.min(p.scrollHeight, 280) || unten >= oben;
+    p.style.maxHeight = Math.max(100, nachUnten ? unten : oben) + "px";
+    p.style.left = Math.max(8, Math.min(r.left, innerWidth - p.offsetWidth - 8)) + "px";
+    if (nachUnten) p.style.top = (r.bottom + 3) + "px"; else p.style.bottom = (innerHeight - r.top + 3) + "px";
+    const knoepfe = $$("button", p);
+    knoepfe.forEach(x => x.addEventListener("click", e => {
+      e.stopPropagation();
+      const i = +x.dataset.i; this.zu(); b.focus({preventScroll: true});
+      if (sel.selectedIndex !== i && document.contains(sel)) { sel.selectedIndex = i; this.text(sel); sel.dispatchEvent(new Event("change", {bubbles: true})); }
+    }));
+    p.addEventListener("keydown", e => {
+      const j = knoepfe.indexOf(document.activeElement);
+      if (e.key === "ArrowDown" || e.key === "ArrowUp") { e.preventDefault(); const n = knoepfe[Math.max(0, Math.min(knoepfe.length - 1, j + (e.key === "ArrowDown" ? 1 : -1)))]; if (n) n.focus(); }
+      else if (e.key === "Escape" || e.key === "Tab") { e.preventDefault(); e.stopPropagation(); this.zu(); b.focus({preventScroll: true}); }
+    });
+    b.classList.add("auf");
+    this.offen = {b, p};
+    const an = $("button.an", p) || knoepfe[0];
+    if (an) { an.scrollIntoView({block: "nearest"}); an.focus({preventScroll: true}); }
+  },
+  zu() { if (!this.offen) return; this.offen.p.remove(); this.offen.b.classList.remove("auf"); this.offen = null; },
+  start() {
+    $$("select").forEach(s => this.bauen(s));
+    new MutationObserver(ms => {
+      for (const m of ms) for (const n of m.addedNodes) {
+        if (n.nodeType !== 1) continue;
+        if (n.tagName === "SELECT") this.bauen(n); else n.querySelectorAll && n.querySelectorAll("select").forEach(s => this.bauen(s));
+      }
+      if (this.offen && !document.contains(this.offen.b)) this.zu();   // Feld neu gezeichnet → Liste weg
+    }).observe(document.body, {childList: true, subtree: true});
+    // Klick daneben, Escape, Scrollen oder Fenstergröße schließen die Liste
+    document.addEventListener("pointerdown", e => { if (this.offen && !this.offen.p.contains(e.target) && !this.offen.b.contains(e.target)) this.zu(); }, true);
+    document.addEventListener("keydown", e => { if (e.key === "Escape" && this.offen) { e.stopPropagation(); this.zu(); } }, true);
+    document.addEventListener("scroll", e => { if (this.offen && !this.offen.p.contains(e.target)) this.zu(); }, true);
+    addEventListener("resize", () => this.zu());
+  }
+};
+if (document.body) Auswahl.start(); else document.addEventListener("DOMContentLoaded", () => Auswahl.start());
+
 /* ── Modal-Dialoge ─────────────────────────────────────────── */
 function modal(html, buttons, cls = "") {
   return new Promise(res => {

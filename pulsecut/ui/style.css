@@ -217,3 +217,18 @@ canvas.welle{width:100%;height:70px;display:block;background:#f4f3ef;border-radi
 .kwgruppe>.kopf .holen{margin-left:auto}
 .kwgruppe .leer{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
 @media (max-width:640px){.ezclip .strip{width:100%}}
+
+/* eigene Auswahllisten (siehe Auswahl in app.js) */
+select.awquelle{position:absolute!important;width:1px!important;height:1px!important;min-width:0!important;padding:0!important;margin:0!important;border:0!important;opacity:0!important;pointer-events:none;overflow:hidden}
+.auswahl{display:inline-flex;align-items:center;gap:8px;max-width:100%;min-width:0;padding:6px 8px;text-align:left;vertical-align:middle}
+.auswahl .awtext{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.auswahl .awpfeil{flex:none;opacity:.55;font-size:11px}
+.auswahl.auf{border-color:var(--acc)}
+.awliste{position:fixed;z-index:200;background:#fff;border:1px solid var(--line);border-radius:8px;box-shadow:0 10px 30px #0003;overflow:auto;padding:4px;max-width:min(440px,calc(100vw - 16px))}
+.awliste button{display:block;width:100%;text-align:left;border:0;border-radius:5px;background:none;padding:6px 10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.awliste button:hover,.awliste button:focus{background:#eef2ff;outline:none}
+.awliste button.an{font-weight:600;background:#e7efff}
+.awtrenn{height:1px;background:var(--line);margin:4px 6px}
+.szk .row{flex-wrap:wrap;min-width:0}.szk .auswahl{flex:1 1 0;min-width:0}
+.ezclip .auswahl{max-width:260px}
+.ezkopf .auswahl{max-width:280px}

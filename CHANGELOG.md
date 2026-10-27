@@ -13,6 +13,11 @@ The preview versions 1.0.0–1.0.10 published before have been withdrawn; their 
   neighbouring one. Assignments made by hand always win over the AI, also when the recognition runs again, and are
   kept with the project. Step 7 offers the same in its scene view.
 - Fixed: clicking an entry in the timeline history list could also try to open a video.
+- **Selection lists of their own** instead of the system ones (keywords, days, blocks): the system list under Linux
+  picks the entry under the mouse pointer as soon as the button is released – when there was little room below, the
+  list lay over the field and a click picked a wrong keyword at once. Now a click only opens the list (below the
+  field, or above it when there is no room), an entry is only picked by clicking it, Escape or a click next to it
+  closes it. The fields no longer stick out of the scene cards; long names are shortened with “…”.
 - Timeline (step 9): **undo and redo** for every edit – buttons ↶ ↷, Ctrl+Z / Ctrl+Y (or Ctrl+Shift+Z), and a history
   list (☰) of the last actions to go back or forward several steps at once. Covered: moving a passage, length, order,
   other passage, removing (all three choices), inserting, locks, original sound per shot and for the whole film,

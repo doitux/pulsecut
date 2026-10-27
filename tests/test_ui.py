@@ -93,6 +93,15 @@ def test_workflow(app):
         def zustand():
             return pg.evaluate("fetch('/api/zustand').then(r=>r.json())")
 
+        def waehle(css, value):
+            """Picks an entry like a person: click on the own selection list next to the <select>, then on the entry."""
+            i = pg.eval_on_selector(css, "(s,v)=>[...s.options].findIndex(o=>o.value===v)", value)
+            assert i >= 0, (css, value)
+            pg.click(f"{css} + .auswahl")
+            pg.wait_for_selector(".awliste")
+            pg.click(f".awliste button[data-i='{i}']")
+            assert not pg.query_selector(".awliste")
+
         def wait_job(name, timeout=600):
             t0 = time.time()
             pg.wait_for_timeout(500)
@@ -207,7 +216,11 @@ def test_workflow(app):
         assert all(c["name"] != excluded for z in er["szenen"] for c in z["clipliste"]), "clip set to Out came back"
         # move the first scene into a new keyword
         new_name = "Test category" if lang == "en" else "Testkategorie"
-        pg.select_option(".szk .zkw >> nth=0", "__neu__")
+        # no selection list sticks out of its scene card
+        assert pg.evaluate("""[...document.querySelectorAll('.szk')].every(k => { const a = k.querySelector('.auswahl');
+            return a && a.getBoundingClientRect().right <= k.getBoundingClientRect().right + 0.5; })""")
+        first = pg.eval_on_selector(".szk", "e=>e.dataset.id")
+        waehle(f'.szk[data-id="{first}"] .zkw', "__neu__")
         pg.wait_for_selector("#mein")
         pg.fill("#mein", new_name)
         pg.click("#modal .weiter .pri")
@@ -226,7 +239,32 @@ def test_workflow(app):
         pg.click(f'#mbox .ezclip[data-c="{clip}"] .strip')
         pg.wait_for_selector(f'#mbox .ezclip[data-c="{clip}"] video')
         snap("06_szene_clips")
-        pg.select_option(f'#mbox .ezclip[data-c="{clip}"] .ezkw', ziel["id"])
+        pg.click(f'#mbox .ezclip[data-c="{clip}"] .ezkw + .auswahl'); pg.wait_for_selector(".awliste")
+        snap("06_szene_liste")
+        pg.keyboard.press("Escape")
+        # pressing and releasing the mouse on the list only opens it – nothing is picked by the release, and the list
+        # never lies on top of the field (that is what went wrong with the system selection under Linux)
+        knopf = f'#mbox .ezclip[data-c="{clip}"] .ezkw + .auswahl'
+        bb = pg.locator(knopf).bounding_box()
+        vorher = pg.eval_on_selector(f'#mbox .ezclip[data-c="{clip}"] .ezkw', "s=>s.value")
+        for hoehe in (950, 560):   # also when there is little room below and the list opens upwards
+            pg.set_viewport_size({"width": 1440, "height": hoehe})
+            pg.wait_for_timeout(200)
+            bb = pg.locator(knopf).bounding_box()
+            pg.mouse.move(bb["x"] + bb["width"] / 2, bb["y"] + bb["height"] / 2)
+            pg.mouse.down()
+            pg.wait_for_timeout(150)
+            pg.mouse.up()
+            pg.wait_for_selector(".awliste")
+            lb = pg.locator(".awliste").bounding_box()
+            assert lb["y"] >= bb["y"] + bb["height"] or lb["y"] + lb["height"] <= bb["y"], (bb, lb)
+            pg.wait_for_timeout(300)
+            assert pg.query_selector(".awliste")
+            assert pg.eval_on_selector(f'#mbox .ezclip[data-c="{clip}"] .ezkw', "s=>s.value") == vorher
+            pg.keyboard.press("Escape")
+            assert not pg.query_selector(".awliste") and not pg.locator("#modal").is_hidden()
+        pg.set_viewport_size({"width": 1440, "height": 950})
+        waehle(f'#mbox .ezclip[data-c="{clip}"] .ezkw', ziel["id"])
         pg.wait_for_function(f"!document.querySelector('#mbox .ezclip[data-c=\"{clip}\"]')", timeout=30000)
         assert pg.eval_on_selector_all("#mbox .ezclip", "e=>e.map(x=>x.dataset.c)") == rest   # rest of the scene stays open
         kw_von = lambda: {c["name"]: (c["kw"], c["kw_manuell"]) for s in pg.evaluate(
@@ -250,7 +288,7 @@ def test_workflow(app):
                    if any(c["name"] == clip for c in s["clipliste"]))
         pg.click(f'.szk[data-id="{sid}"] .strip')
         pg.wait_for_selector(f'#mbox .ezclip[data-c="{clip}"]')
-        pg.select_option(f'#mbox .ezclip[data-c="{clip}"] .ezkw', "__auto__")
+        waehle(f'#mbox .ezclip[data-c="{clip}"] .ezkw', "__auto__")
         pg.wait_for_function(f"fetch('/api/erkennung').then(r=>r.json()).then(e=>e.erkennung.szenen.some(s=>s.clipliste.some(c=>c.name==='{clip}'&&!c.kw_manuell)))", timeout=30000)
         assert kw_von()[clip] == (z["kw"], "")
         pg.click("#modal .weiter .pri")
