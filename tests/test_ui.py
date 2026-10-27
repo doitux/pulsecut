@@ -215,6 +215,46 @@ def test_workflow(app):
         heads = pg.eval_on_selector_all(".kwgruppe .kopf b", "e=>e.map(x=>x.innerText)")
         assert new_name in heads
         n_groups = n_kw + 2
+        # open a scene, play one clip and move just that clip to another keyword (the scene is split)
+        er = pg.evaluate("fetch('/api/erkennung').then(r=>r.json())")
+        z = next(z for z in er["erkennung"]["szenen"] if z["n"] >= 2)
+        clip, rest = z["clipliste"][-1]["name"], [c["name"] for c in z["clipliste"][:-1]]
+        ziel = next(k for k in er["stichworte"] if k["id"] != z["kw"])
+        pg.click(f'.szk[data-id="{z["id"]}"] .strip')
+        pg.wait_for_selector("#mbox.breit .ezclip")
+        assert pg.eval_on_selector_all("#mbox .ezclip", "e=>e.map(x=>x.dataset.c)") == rest + [clip]
+        pg.click(f'#mbox .ezclip[data-c="{clip}"] .strip')
+        pg.wait_for_selector(f'#mbox .ezclip[data-c="{clip}"] video')
+        snap("06_szene_clips")
+        pg.select_option(f'#mbox .ezclip[data-c="{clip}"] .ezkw', ziel["id"])
+        pg.wait_for_function(f"!document.querySelector('#mbox .ezclip[data-c=\"{clip}\"]')", timeout=30000)
+        assert pg.eval_on_selector_all("#mbox .ezclip", "e=>e.map(x=>x.dataset.c)") == rest   # rest of the scene stays open
+        kw_von = lambda: {c["name"]: (c["kw"], c["kw_manuell"]) for s in pg.evaluate(
+            "fetch('/api/erkennung').then(r=>r.json())")["erkennung"]["szenen"] for c in s["clipliste"]}
+        assert kw_von()[clip] == (ziel["id"], ziel["id"])
+        assert all(kw_von()[n][0] == z["kw"] for n in rest)
+        pg.click("#modal .weiter .pri")
+        # get it back with "⇆ get clips here" on the old keyword
+        pg.click(f'.kwgruppe[data-kw="{z["kw"]}"] .holen')
+        pg.wait_for_selector("#ezholliste")
+        if not pg.query_selector(f'#ezholliste .ezclip[data-c="{clip}"]'):
+            pg.check("#ezalle")
+        assert pg.is_disabled("#modal .weiter .pri")
+        pg.check(f'#ezholliste .ezclip[data-c="{clip}"] .ezhaken')
+        assert pg.inner_text("#modal .weiter .pri").endswith("(1)")
+        pg.click("#modal .weiter .pri")
+        pg.wait_for_function(f"fetch('/api/erkennung').then(r=>r.json()).then(e=>e.erkennung.szenen.some(s=>s.clipliste.some(c=>c.name==='{clip}'&&c.kw==='{z['kw']}')))", timeout=30000)
+        pg.wait_for_selector("#toast.on")
+        # and back to automatic via the selection in the scene view
+        sid = next(s["id"] for s in pg.evaluate("fetch('/api/erkennung').then(r=>r.json())")["erkennung"]["szenen"]
+                   if any(c["name"] == clip for c in s["clipliste"]))
+        pg.click(f'.szk[data-id="{sid}"] .strip')
+        pg.wait_for_selector(f'#mbox .ezclip[data-c="{clip}"]')
+        pg.select_option(f'#mbox .ezclip[data-c="{clip}"] .ezkw', "__auto__")
+        pg.wait_for_function(f"fetch('/api/erkennung').then(r=>r.json()).then(e=>e.erkennung.szenen.some(s=>s.clipliste.some(c=>c.name==='{clip}'&&!c.kw_manuell)))", timeout=30000)
+        assert kw_von()[clip] == (z["kw"], "")
+        pg.click("#modal .weiter .pri")
+        assert pg.evaluate("document.querySelectorAll('.kwgruppe').length") == n_groups
         # 7 weighting & order: group photo after the concert
         pg.click("[data-go=gewichtung]")
         pg.wait_for_selector(".gewicht")

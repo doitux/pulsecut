@@ -200,3 +200,20 @@ canvas.welle{width:100%;height:70px;display:block;background:#f4f3ef;border-radi
 .verlaufliste .sgrp{font-size:12px;color:var(--mut);margin:8px 2px 2px;text-transform:uppercase;letter-spacing:.04em}
 .verlaufliste .vz{display:flex;gap:8px;text-align:left;padding:6px 10px}
 .verlaufliste .vz.vor{opacity:.65}
+
+/* Szene ansehen / Clips hierher holen (Schritt 6 und 7) */
+.mbox.breit{width:min(940px,94vw);max-width:94vw}
+.ezkopf{gap:8px;align-items:center;margin:4px 0 8px}
+.ezliste{display:flex;flex-direction:column;gap:2px}
+.ezclip{padding:6px 4px;border-bottom:1px solid #eee;border-radius:6px}
+.ezclip.spielt{background:#f3f6ff}
+.ezclip .row{gap:10px;align-items:center;flex-wrap:wrap}
+.ezclip .strip{width:220px;height:48px;flex:none}.ezclip .strip img{height:48px}
+.ezinfo{flex:1;min-width:150px}
+.ezclip video{width:100%;max-height:48vh;display:block;border-radius:8px;background:#000;margin-top:6px}
+.ezgruppe{margin:10px 0 4px}
+.ezhaken{width:18px;height:18px}
+.ezalle{gap:6px;margin:6px 0}
+.kwgruppe>.kopf .holen{margin-left:auto}
+.kwgruppe .leer{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+@media (max-width:640px){.ezclip .strip{width:100%}}

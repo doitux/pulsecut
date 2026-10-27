@@ -134,6 +134,7 @@ class Projekt:
         if self.cache.get("format") != FORMAT:
             self.cache = {"format": FORMAT, "clips": {}, "meta": {}, "beats": {}, "ton": {}, "texte": {}}
         self.lock = threading.RLock()
+        self.erk_lock = threading.RLock()   # Zuordnung/Szenen: nie einen halb neu berechneten Stand ausliefern
         self.save_lock = threading.Lock()
         self.media_lock = threading.Lock()   # Klick-Spuren und Vorschau-Mix nicht doppelt erzeugen
         self.boost = False                    # Videoanalyse mit voller Rechenleistung
@@ -597,7 +598,11 @@ class Projekt:
             self.d["erledigt"].append("erkennung")
         self.save()
 
-    def compute_erkennung(self, T=None):
+    def compute_erkennung(self, *a, **k):
+        with self.erk_lock:
+            return self._compute_erkennung(*a, **k)
+
+    def _compute_erkennung(self, T=None):
         """Zuordnung Clip → Stichwort, Szenen, Unklares, Rückfragen."""
         kws = self.d["stichworte"]
         K = len(kws)
@@ -747,7 +752,11 @@ class Projekt:
         self.compute_erkennung()
         return new
 
-    def update_scenes(self):
+    def update_scenes(self, *a, **k):
+        with self.erk_lock:
+            return self._update_scenes(*a, **k)
+
+    def _update_scenes(self):
         """Szenen mit Menge und Filmreihenfolge (Standard: chronologisch / Reihenfolge der Videos)."""
         base = getattr(self, "base_scenes", None)
         if base is None:
@@ -778,7 +787,11 @@ class Projekt:
         self.scenes = sc
         return sc
 
-    def erkennung_info(self):
+    def erkennung_info(self, *a, **k):
+        with self.erk_lock:
+            return self._erkennung_info(*a, **k)
+
+    def _erkennung_info(self):
         if self.erk is None:
             return None
         kws = self.d["stichworte"]
@@ -816,7 +829,8 @@ class Projekt:
             kf = c.ana.get("ki_frames", [])
             mine = sorted([s for s in sh if s["clip"] == c.name], key=lambda s: s["src"])
             cl.append({"name": c.name, "zeit": f"{c.start:%H:%M:%S}", "dauer": round(c.dur, 1), "prio": c.prio,
-                       "hoch": c.portrait, "nutzbar": bool(c.segs), "kw_manuell": c.kat_manuell,
+                       "hoch": c.portrait, "nutzbar": bool(c.segs), "kw_manuell": c.kat_manuell, "kw": c.kw,
+                       "proxy": f"/media/proxy/{c.hash}.webm",
                        "sicher": round(getattr(c, "kw_sicher", 1.0), 2),
                        "bilder": [f"/bild/{c.hash}/{kf[int(round(i))][1]}"
                                   for i in np.linspace(0, len(kf) - 1, min(3, len(kf)))] if kf else [],
@@ -827,7 +841,7 @@ class Projekt:
                                for x in c.excl]})
         return {"id": z["id"], "kw": z["kw"], "farbe": (colors or {}).get(z["kw"], "#999"), "tag": a.strftime("%d.%m."),
                 "zeit": fmt_day_time(a) + (f"–{b:%H:%M}" if (b - a).total_seconds() > 90 else ""),
-                "n": len(cs), "bilder": [p for p in pics if p], "menge": z.get("menge", ""),
+                "n": len(cs), "ord": cs[0].order, "bilder": [p for p in pics if p], "menge": z.get("menge", ""),
                 "sicherheit": round(z.get("sicherheit", 1.0), 2), "clipliste": cl,
                 "schnitte": len(sh), "sekunden": round(sum(s.get("dur", 0) for s in sh), 1),
                 "tl0": round(min(s.get("tl0", 0) for s in sh), 2) if sh else None,
@@ -903,6 +917,34 @@ class Projekt:
             self.d["clips"].pop(name, None)
         self.save()
         self.apply_user_clip_settings()
+
+    def clips_kw(self, namen, kw):
+        """Stichwort für mehrere Clips von Hand festlegen ("" = wieder automatisch); gibt die Anzahl zurück."""
+        ids = {k["id"] for k in self.d["stichworte"]}
+        if kw and kw not in ids:
+            raise RuntimeError(_t("Stichwort nicht gefunden"))
+        with self.erk_lock:
+            return self._clips_kw(namen, kw)
+
+    def _clips_kw(self, namen, kw):
+        da = {c.name for c in self.clips}
+        n = 0
+        for name in namen:
+            if name not in da:
+                continue
+            u = self.d["clips"].setdefault(name, {})
+            if kw:
+                u["kat"] = kw
+            else:
+                u.pop("kat", None)
+                if not u:
+                    self.d["clips"].pop(name, None)
+            n += 1
+        self.save()
+        self.apply_user_clip_settings()
+        if self.erk is not None:
+            self.compute_erkennung()
+        return n
 
     def set_scene(self, sid=None, menge=None, folge=None, reset=False):
         if menge is not None and sid:

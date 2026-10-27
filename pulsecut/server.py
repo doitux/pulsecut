@@ -357,15 +357,13 @@ def api_post(path, b, raw=None, ctype=""):
         pr.apply_user_clip_settings()
         pr.compute_erkennung()
         return {}
-    if path == "/api/szene/kw":
+    if path == "/api/szene/kw":   # ganze Szene in ein anderes Stichwort ("" = wieder automatisch)
         z = next((z for z in pr.scenes if z["id"] == b["id"]), None)
         if z:
-            for c in z["clips"]:
-                pr.d["clips"].setdefault(c.name, {})["kat"] = b["kw"]
-            pr.save()
-            pr.apply_user_clip_settings()
-            pr.compute_erkennung()
+            pr.clips_kw([c.name for c in z["clips"]], b.get("kw") or "")
         return {}
+    if path == "/api/clips/kw":   # einzelne Clips in ein anderes Stichwort ("" = wieder automatisch)
+        return {"n": pr.clips_kw([str(n) for n in b.get("namen") or []], b.get("kw") or "")}
     if path == "/api/szene":
         pr.set_scene(b.get("id"), menge=b.get("menge"), folge=b.get("folge") if isinstance(b.get("folge"), list) else None,
                      reset=bool(b.get("zuruecksetzen")))

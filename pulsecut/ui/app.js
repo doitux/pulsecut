@@ -21,9 +21,10 @@ function seg(name, vals, cur) {
 function onSeg(el, fn) { el.addEventListener("click", e => { const b = e.target.closest("button"); if (b && b.parentElement === el) fn(b.dataset.v); }); }
 
 /* ── Modal-Dialoge ─────────────────────────────────────────── */
-function modal(html, buttons) {
+function modal(html, buttons, cls = "") {
   return new Promise(res => {
     const m = $("#modal"), box = $("#mbox");
+    box.className = "mbox" + (cls ? " " + cls : "");
     box.innerHTML = html + `<div class="weiter">${buttons.map((b, i) => `<button data-i="${i}" class="${b.pri ? "pri" : ""}">${b.t}</button>`).join("")}</div>`;
     m.hidden = false;
     box.querySelectorAll(".weiter button").forEach(b => b.onclick = () => { m.hidden = true; res(buttons[+b.dataset.i].v); });
@@ -38,8 +39,8 @@ async function eingabe(text, platzhalter, ok = T("Anlegen")) {
 }
 
 /* ── Stichwort einer Szene oder eines Clips ändern (auch: neues Stichwort, ganz raus) ── */
-const kwOptionen = (kws, sel) => kws.map(k => `<option value="${k.id}" ${k.id === sel ? "selected" : ""}>${esc(k.name)}</option>`).join("") +
-  `<option disabled>──────────</option><option value="__neu__">${T("➕ Neues Stichwort …")}</option><option value="__raus__">${T("✕ Raus – nicht in den Film")}</option>`;
+const kwOptionen = (kws, sel, auto) => kws.map(k => `<option value="${k.id}" ${k.id === sel ? "selected" : ""}>${esc(k.name)}</option>`).join("") +
+  `<option disabled>──────────</option>${auto ? `<option value="__auto__">${T("↺ Wieder automatisch (KI entscheidet)")}</option>` : ""}<option value="__neu__">${T("➕ Neues Stichwort …")}</option><option value="__raus__">${T("✕ Raus – nicht in den Film")}</option>`;
 async function kwWahl(v, ziel) {   // ziel: {szene: id} oder {clip: name}; gibt false zurück, wenn abgebrochen
   if (v === "__neu__") {
     const name = await eingabe(T("Wie soll das neue Stichwort heißen?"), T("z. B. Abschlussparty"));
@@ -49,6 +50,10 @@ async function kwWahl(v, ziel) {   // ziel: {szene: id} oder {clip: name}; gibt 
   if (v === "__raus__") {
     if (ziel.szene) await api("/api/szene/raus", {id: ziel.szene}); else await api("/api/clip", {name: ziel.clip, prio: "raus"});
     toast(T("Raus – lässt sich unter „Videos“ wieder zurückholen")); return true;
+  }
+  if (v === "__auto__") {
+    if (ziel.szene) await api("/api/szene/kw", {id: ziel.szene, kw: ""}); else await api("/api/clips/kw", {namen: [ziel.clip], kw: ""});
+    toast(T("Wieder automatisch – die KI ordnet neu zu")); return true;
   }
   if (ziel.szene) await api("/api/szene/kw", {id: ziel.szene, kw: v}); else await api("/api/clip", {name: ziel.clip, kat: v});
   return true;
@@ -581,16 +586,16 @@ R.erkennung = {
         <div class="row" style="margin:8px 0">${zs.slice(0, 4).map(z => `<div class="strip" style="width:200px;height:48px">${z.bilder.slice(0, 3).map(b => `<img src="${b}" style="height:48px">`).join("")}</div>`).join("")}</div>
         <div class="row"><button class="pri" data-a="ja">${T("Ja, als Stichwort aufnehmen")}</button><button data-a="nein">${T("Nein")}</button><span class="meta">${T("oder gehört zu")}</span><select><option value="">…</option>${kwopt("")}</select></div></div>`;
     }
-    h += `<div class="meta" style="margin:4px 0 10px">${T("Falsch einsortiert? Über die Auswahl unter jeder Szene in ein anderes Stichwort verschieben, ein neues Stichwort anlegen oder die Szene ganz rausnehmen.")}${E.ausgeschlossen ? " " + (E.ausgeschlossen === 1 ? T("1 Video steht unter „Videos“ auf Raus und wird nicht berücksichtigt.") : T`${E.ausgeschlossen} Videos stehen unter „Videos“ auf Raus und werden nicht berücksichtigt.`) : ""}</div>`;
+    h += `<div class="meta" style="margin:4px 0 10px">${T("Falsch einsortiert? Über die Auswahl unter jeder Szene in ein anderes Stichwort verschieben, ein neues Stichwort anlegen oder die Szene ganz rausnehmen. Klick auf die Bilder zeigt die einzelnen Clips – dort lässt sich auch nur ein Clip umhängen. Fehlt bei einem Stichwort etwas, hol es dir mit „⇆ Clips hierher holen“.")}${E.ausgeschlossen ? " " + (E.ausgeschlossen === 1 ? T("1 Video steht unter „Videos“ auf Raus und wird nicht berücksichtigt.") : T`${E.ausgeschlossen} Videos stehen unter „Videos“ auf Raus und werden nicht berücksichtigt.`) : ""}</div>`;
     if (!E.ki) h += `<div class="hinweis">${T("Ohne KI wurden die Videos an den größten Zeitlücken auf die Stichworte verteilt – bitte prüfen und mit der Auswahl je Szene korrigieren.")}</div>`;
     if (E.unklar.length) h += `<div class="hinweis">${E.unklar.length === 1 ? T("<b>1 Szene ist unsicher</b> (gestrichelt umrandet) – bitte kurz prüfen.") : T`<b>${E.unklar.length} Szenen sind unsicher</b> (gestrichelt umrandet) – bitte kurz prüfen.`}</div>`;
     for (const g of E.gruppen) {
       const zs = E.szenen.filter(z => z.kw === g.kw);
-      h += `<div class="kwgruppe"><div class="kopf"><span class="dot" style="background:${g.farbe}"></span><b>${esc(g.name)}</b><span class="meta">${pl(g.szenen, N("Szene"), N("Szenen"))} · ${pl(g.clips, N("Clip"), N("Clips"))} · ${fmt(g.sekunden)} min</span></div>
+      h += `<div class="kwgruppe" data-kw="${esc(g.kw)}"><div class="kopf"><span class="dot" style="background:${g.farbe}"></span><b>${esc(g.name)}</b><span class="meta">${pl(g.szenen, N("Szene"), N("Szenen"))} · ${pl(g.clips, N("Clip"), N("Clips"))} · ${fmt(g.sekunden)} min</span><button class="klein holen" title="${T("Clips aus anderen Stichworten ansehen und diesem Stichwort zuordnen")}">${T("⇆ Clips hierher holen")}</button></div>
         <div class="szkarten">${zs.length ? zs.map(z => `<div class="szk${E.unklar.includes(z.id) ? " unklar" : ""}" style="border-top-color:${g.farbe}" data-id="${esc(z.id)}">
           <div class="strip">${z.bilder.map(b => `<img loading="lazy" src="${b}">`).join("")}</div>
           <div class="meta" style="margin-top:4px">${esc(z.zeit)} · ${pl(z.n, N("Clip"), N("Clips"))} · ${fmt(z.dauer)}</div>
-          <div class="row" style="margin-top:4px"><select class="zkw" title="${T("Stichwort dieser Szene ändern")}">${kwOptionen(ER.stichworte, z.kw)}</select>${E.ki ? `<span class="pill ${z.sicherheit < .55 ? "warn" : "ok"}">${Math.round(z.sicherheit * 100)} %</span>` : ""}</div></div>`).join("") : `<div class="meta">${T("– keine Szene erkannt –")}</div>`}</div></div>`;
+          <div class="row" style="margin-top:4px"><select class="zkw" title="${T("Stichwort dieser Szene ändern")}">${kwOptionen(ER.stichworte, z.kw, z.clipliste.some(c => c.kw_manuell))}</select>${E.ki ? `<span class="pill ${z.sicherheit < .55 ? "warn" : "ok"}">${Math.round(z.sicherheit * 100)} %</span>` : ""}</div></div>`).join("") : `<div class="meta leer">${T("– keine Szene erkannt –")} <button class="holen">${T("Clips aus den Nachbar-Szenen zuordnen …")}</button></div>`}</div></div>`;
     }
     h += weiter("gewichtung", T("Passt so – weiter"));
     box.innerHTML = h; bindWeiter(box);
@@ -601,14 +606,99 @@ R.erkennung = {
     });
     $$(".szk", box).forEach(c => {
       $(".zkw", c).onchange = async e => { await kwWahl(e.target.value, {szene: c.dataset.id}); await this.load(); };
-      $(".strip", c).onclick = () => { const z = E.szenen.find(z => z.id === c.dataset.id); szeneAnsehen(z); };
+      $(".strip", c).onclick = () => szeneAnsehen(c.dataset.id, null, EZ_ERK);
     });
+    $$(".kwgruppe", box).forEach(g => $$(".holen", g).forEach(b => b.onclick = () => clipsHolen(g.dataset.kw)));
   }
 };
-async function szeneAnsehen(z) {
-  await modal(`<h3>${T("Szene")} · ${esc(z.zeit)}</h3><div class="col">${z.clipliste.map(c => `<div class="row"><div class="strip" style="width:260px">${c.bilder.map(b => `<img src="${b}">`).join("")}</div><div class="meta"><b>${esc(c.name)}</b><br>${c.zeit} · ${fmt(c.dauer)}</div><button class="klein" data-n="${esc(c.name)}">${T("▶ ansehen")}</button></div>`).join("")}</div>`, [{t: T("Schließen"), v: 1, pri: true}]).then(() => {});
+
+/* ── Szene ansehen, einzelne Clips umhängen, Clips in ein Stichwort holen ── */
+// Datenquelle: Schritt 6 (Erkennung) oder Schritt 7 (Gewichtung) – beide liefern {erkennung, stichworte}
+const EZ_ERK = {daten: () => ER, neu: () => R.erkennung.load()};
+const EZ_GW = {daten: () => GW, neu: async () => { GW = await api("/api/gewichtung"); R.gewichtung.draw(); }};
+const ezKwName = (q, id) => { const k = q.daten().stichworte.find(k => k.id === id); return k ? k.name : T("ohne Stichwort"); };
+const ezClips = q => q.daten().erkennung.szenen.flatMap(z => z.clipliste);
+function ezZeile(q, c, art) {   // art: "wahl" (Stichwort-Auswahl) oder "haken" (zum Ankreuzen)
+  const E = q.daten().erkennung;
+  const info = c.kw_manuell ? T("von Hand zugeordnet") : (E.ki ? T`KI: ${Math.round((c.sicher || 0) * 100)} % sicher` : "");
+  return `<div class="ezclip" data-c="${esc(c.name)}"><div class="row">
+    ${art === "haken" ? `<input type="checkbox" class="ezhaken" title="${T("diesen Clip zuordnen")}">` : ""}
+    <div class="strip ezplay" title="${T("Clip abspielen")}">${c.bilder.map(b => `<img loading="lazy" src="${b}">`).join("")}</div>
+    <div class="meta ezinfo"><b>${esc(c.name)}</b><br>${c.zeit} · ${fmt(c.dauer)}${info ? " · " + info : ""}</div>
+    <button class="klein ezplay">${T("▶ ansehen")}</button>
+    ${art === "wahl" ? `<select class="ezkw" title="${T("Stichwort dieses Clips ändern")}">${kwOptionen(q.daten().stichworte, c.kw, !!c.kw_manuell)}</select>` : ""}
+  </div><div class="ezvideo"></div></div>`;
 }
-document.addEventListener("click", e => { const b = e.target.closest("button[data-n]"); if (b && $("#modal").hidden === false) { $("#modal").hidden = true; vorschauClip(b.dataset.n); } });
+function ezAbspielen(box, q) {   // Klick auf Bilder oder ▶: Clip direkt im Dialog abspielen (noch ein Klick: zu)
+  $$(".ezplay", box).forEach(b => b.onclick = e => {
+    e.stopPropagation();
+    const r = b.closest(".ezclip"), v = $(".ezvideo", r), offen = !!v.firstChild;
+    $$(".ezvideo", box).forEach(x => x.innerHTML = "");
+    $$(".ezclip.spielt", box).forEach(x => x.classList.remove("spielt"));
+    if (offen) return;
+    const c = ezClips(q).find(c => c.name === r.dataset.c); if (!c) return;
+    r.classList.add("spielt");
+    v.innerHTML = `<video src="${c.proxy}" controls autoplay></video>`;
+  });
+}
+async function szeneAnsehen(sid, namen, q = EZ_ERK) {
+  // sid: Szene; namen: Clips, deren Szene gezeigt werden soll (nach einer Änderung hat die Szene evtl. eine neue ID)
+  if (sid && typeof sid === "object") sid = sid.id;
+  const D = q.daten(), E = D && D.erkennung; if (!E) return;
+  const z = E.szenen.find(s => s.id === sid) || (namen && E.szenen.find(s => s.clipliste.some(c => namen.includes(c.name))));
+  if (!z) { $("#modal").hidden = true; return; }
+  const box = $("#mbox");
+  modal(`<h3>${T("Szene")} · ${esc(z.zeit)} · ${pl(z.n, N("Clip"), N("Clips"))}</h3>
+    <div class="row ezkopf"><span class="dot" style="background:${z.farbe}"></span><b>${esc(ezKwName(q, z.kw))}</b><span style="flex:1"></span><span class="meta">${T("Ganze Szene:")}</span><select class="ezszene" title="${T("Stichwort dieser Szene ändern")}">${kwOptionen(D.stichworte, z.kw, z.clipliste.some(c => c.kw_manuell))}</select></div>
+    <p class="meta">${T("Gehört nur ein Clip zu einem anderen Stichwort? Dann ändere sein Stichwort direkt hier – die Szene wird dabei geteilt. Klick auf die Bilder spielt den Clip ab.")}</p>
+    <div class="ezliste">${z.clipliste.map(c => ezZeile(q, c, "wahl")).join("")}</div>`, [{t: T("Schließen"), v: 1, pri: true}], "breit");
+  ezAbspielen(box, q);
+  const alle = z.clipliste.map(c => c.name);
+  const danach = async (rest, text) => { await q.neu(); if (text) toast(text); szeneAnsehen(null, rest.length ? rest : alle, q); };
+  $(".ezszene", box).onchange = async e => {
+    const v = e.target.value;
+    if (v === "__neu__" || v === "__raus__") { const ok = await kwWahl(v, {szene: z.id}); $("#modal").hidden = true; await q.neu(); return ok; }
+    await kwWahl(v, {szene: z.id});
+    danach(alle, v === "__auto__" ? "" : T`Szene nach „${ezKwName(q, v)}“ verschoben`);
+  };
+  $$(".ezkw", box).forEach(sel => sel.onchange = async () => {
+    const name = sel.closest(".ezclip").dataset.c, v = sel.value, rest = alle.filter(n => n !== name);
+    if (v === "__neu__") { if (await kwWahl(v, {clip: name})) danach(rest, ""); else szeneAnsehen(z.id, alle, q); return; }
+    if (v === "__raus__") { await kwWahl(v, {clip: name}); danach(rest, ""); return; }
+    if (v === "__auto__") { await kwWahl(v, {clip: name}); danach(alle, ""); return; }
+    await api("/api/clips/kw", {namen: [name], kw: v});
+    danach(v === z.kw ? alle : rest, T`Clip nach „${ezKwName(q, v)}“ verschoben`);
+  });
+}
+async function clipsHolen(kw, q = EZ_ERK) {
+  // Clips aus anderen Stichworten diesem Stichwort zuordnen – zuerst die Szenen der Stichworte davor und danach im Ablauf
+  const D = q.daten(), E = D.erkennung, ids = D.stichworte.map(k => k.id), i = ids.indexOf(kw);
+  const nah = new Set([ids[i - 1], ids[i + 1]]);
+  const fremd = E.szenen.filter(z => z.kw !== kw).sort((a, b) => a.ord - b.ord);
+  let alle = !fremd.some(z => nah.has(z.kw));
+  const gewaehlt = new Set(), box = $("#mbox");
+  const p = modal(`<h3>${T`Clips zu „${esc(ezKwName(q, kw))}“ holen`}</h3>
+    <p class="meta">${T("Setz einen Haken bei allen Clips, die zu diesem Stichwort gehören, und klick auf „Zuordnen“. Klick auf die Bilder spielt den Clip ab.")}</p>
+    <label class="row ezalle"><input type="checkbox" id="ezalle" ${alle ? "checked" : ""}> ${T("alle Szenen zeigen (sonst nur die Stichworte direkt davor und danach)")}</label>
+    <div class="ezliste" id="ezholliste"></div>`, [{t: T("Abbrechen"), v: false}, {t: T("Zuordnen"), v: true, pri: true}], "breit");
+  const knopf = () => { const b = $("#mbox .weiter .pri"); if (b) { b.textContent = gewaehlt.size ? T`Zuordnen (${gewaehlt.size})` : T("Zuordnen"); b.disabled = !gewaehlt.size; } };
+  const liste = () => {
+    const zs = fremd.filter(z => alle || nah.has(z.kw));
+    $("#ezholliste").innerHTML = zs.length ? zs.map(z => `<div class="ezgruppe" data-id="${esc(z.id)}"><div class="row ezkopf"><span class="dot" style="background:${z.farbe}"></span><b>${esc(ezKwName(q, z.kw))}</b><span class="meta">${esc(z.zeit)} · ${pl(z.n, N("Clip"), N("Clips"))}</span>${z.n > 1 ? `<button class="klein ezganz">${T("alle Clips der Szene")}</button>` : ""}</div>
+      ${z.clipliste.map(c => ezZeile(q, c, "haken")).join("")}</div>`).join("") : `<div class="meta">${T("Keine anderen Szenen da.")}</div>`;
+    $$("#ezholliste .ezclip").forEach(r => { const h = $(".ezhaken", r); h.checked = gewaehlt.has(r.dataset.c);
+      h.onchange = () => { h.checked ? gewaehlt.add(r.dataset.c) : gewaehlt.delete(r.dataset.c); knopf(); }; });
+    $$("#ezholliste .ezganz").forEach(b => b.onclick = () => { const g = b.closest(".ezgruppe"), hs = $$(".ezhaken", g), an = !hs.every(h => h.checked);
+      hs.forEach(h => { h.checked = an; an ? gewaehlt.add(h.closest(".ezclip").dataset.c) : gewaehlt.delete(h.closest(".ezclip").dataset.c); }); knopf(); });
+    ezAbspielen(box, q);
+  };
+  $("#ezalle").onchange = e => { alle = e.target.checked; liste(); };
+  liste(); knopf();
+  if (!(await p) || !gewaehlt.size) return;
+  const r = await api("/api/clips/kw", {namen: [...gewaehlt], kw});
+  await q.neu();
+  toast(r.n === 1 ? T`1 Clip nach „${ezKwName(q, kw)}“ verschoben` : T`${r.n} Clips nach „${ezKwName(q, kw)}“ verschoben`);
+}
 
 /* ── 7 Gewichtung & Reihenfolge ────────────────────────────── */
 let GW = null, dragId = null; const openSz = new Set();
@@ -652,13 +742,13 @@ R.gewichtung = {
       r.className = "szrow" + (z.menge === "raus" ? " raus" : "") + (changed === z.id ? " chg" : ""); r.draggable = !openSz.has(z.id); r.dataset.id = z.id; r.style.borderLeftColor = z.farbe;
       const film = z.schnitte ? (z.schnitte === 1 ? T`im Film: <b>1 Schnitt</b> · ${komma(z.sekunden)} s` : T`im Film: <b>${z.schnitte} Schnitte</b> · ${komma(z.sekunden)} s`) : T("noch nicht im Film");
       r.innerHTML = `<span class="grip">⠿</span><span class="szmv"><button data-d="-1" ${i ? "" : "disabled"}>▲</button><button data-d="1" ${i < E.szenen.length - 1 ? "" : "disabled"}>▼</button></span>
-        <div><select class="zkw" title="${T("Stichwort dieser Szene ändern")}">${kwOptionen(GW.stichworte, z.kw)}</select> · ${esc(z.zeit)} · ${pl(z.n, N("Clip"), N("Clips"))}<br><span class="meta">${film}</span><button class="klein sztog" style="margin-left:6px">${openSz.has(z.id) ? T("Clips ▴") : T("Clips ▾")} ${z.clipliste.filter(c => c.schnitte.length).length}/${z.n}</button></div>
+        <div><select class="zkw" title="${T("Stichwort dieser Szene ändern")}">${kwOptionen(GW.stichworte, z.kw, z.clipliste.some(c => c.kw_manuell))}</select> · ${esc(z.zeit)} · ${pl(z.n, N("Clip"), N("Clips"))}<br><span class="meta">${film}</span><button class="klein sztog" style="margin-left:6px">${openSz.has(z.id) ? T("Clips ▴") : T("Clips ▾")} ${z.clipliste.filter(c => c.schnitte.length).length}/${z.n}</button></div>
         <div class="szpics">${z.bilder.map(b => `<img loading="lazy" src="${b}">`).join("")}</div>${seg("menge", MENGE(), z.menge)}`;
       onSeg($(':scope > .seg', r), v => this.sz({id: z.id, menge: v}, z.id));
       $(".zkw", r).onchange = async e => { if (await kwWahl(e.target.value, {szene: z.id})) { GW = await api("/api/gewichtung"); this.draw(); } else this.scenes(); };
       $$(".szmv button", r).forEach(b => b.onclick = () => { const ids = E.szenen.map(x => x.id); ids.splice(i, 1); ids.splice(i + +b.dataset.d, 0, z.id); this.sz({folge: ids}, z.id); });
       $(".sztog", r).onclick = () => { openSz.has(z.id) ? openSz.delete(z.id) : openSz.add(z.id); this.scenes(); };
-      $(".szpics", r).onclick = () => szeneAnsehen(z);
+      $(".szpics", r).onclick = () => szeneAnsehen(z.id, null, EZ_GW);
       r.ondragstart = e => { dragId = z.id; e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", z.id); };
       r.ondragover = e => { if (!dragId || dragId === z.id) return; e.preventDefault(); const bb = r.getBoundingClientRect(); const vor = e.clientY < bb.top + bb.height / 2; r.classList.toggle("drop-vor", vor); r.classList.toggle("drop-nach", !vor); };
       r.ondragleave = () => r.classList.remove("drop-vor", "drop-nach");
@@ -673,7 +763,7 @@ R.gewichtung = {
             <div class="meta" style="margin-top:4px"><b>${c.zeit}</b> · ${fmt(c.dauer)} · ${c.hoch ? T("hochkant") : T("quer")} · ${esc(c.name)}</div>
             <div class="meta">${c.schnitte.length ? `<b>${T`${c.schnitte.length}× im Film`}</b>` : (c.nutzbar ? T("nicht im Film") : T("unbrauchbar"))}</div>
             <div class="row" style="margin-top:4px">${seg("prio", [["raus", T("Raus"), "raus"], ["", T("Auto")], ["hoch", T("Wichtig"), "hoch"]], c.prio)}</div>
-            <div class="row" style="margin-top:4px"><span class="meta">${T("gehört zu")}</span><select class="ckw">${kwOptionen(GW.stichworte, z.kw)}</select></div>
+            <div class="row" style="margin-top:4px"><span class="meta">${T("gehört zu")}</span><select class="ckw">${kwOptionen(GW.stichworte, c.kw || z.kw, !!c.kw_manuell)}</select></div>
             <div class="szshots">${c.schnitte.map(u => `<figure><img src="${u.bild || ""}"><button data-id="${u.id}" title="${T("diesen Schnitt rausnehmen")}">✕</button><figcaption>${T("Film")} ${fmt(u.tl)} · ${komma(u.dur.toFixed(1))} s</figcaption></figure>`).join("")}
               ${c.aus.map(u => `<figure class="weg"><img src="${u.bild || ""}"><button data-a="${u.a}" data-b="${u.b}" title="${T("wieder erlauben")}">↺</button><figcaption>${T("abgewählt")}</figcaption></figure>`).join("")}</div>`;
           onSeg($('[data-f="prio"]', e), async v => { await api("/api/clip", {name: c.name, prio: v}); const g = await api("/api/gewichtung"); GW = g; this.scenes(z.id); });

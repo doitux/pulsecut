@@ -6,6 +6,13 @@ tests is published as a [nightly test build](https://github.com/doitux/pulsecut/
 The preview versions 1.0.0–1.0.10 published before have been withdrawn; their changes are listed below by date.
 
 ## Unreleased (nightly)
+- Scene recognition (step 6): **correct single clips**. Clicking the pictures of a scene opens its clips – each one
+  can be played right there and moved to another keyword on its own (the scene is split), or set back to
+  automatic. Every keyword has “⇆ Get clips here”: it shows the clips of the keywords right before and after (or all
+  scenes), to watch, tick and assign – e.g. for a keyword the AI found nothing for, while its clips ended up in the
+  neighbouring one. Assignments made by hand always win over the AI, also when the recognition runs again, and are
+  kept with the project. Step 7 offers the same in its scene view.
+- Fixed: clicking an entry in the timeline history list could also try to open a video.
 - Timeline (step 9): **undo and redo** for every edit – buttons ↶ ↷, Ctrl+Z / Ctrl+Y (or Ctrl+Shift+Z), and a history
   list (☰) of the last actions to go back or forward several steps at once. Covered: moving a passage, length, order,
   other passage, removing (all three choices), inserting, locks, original sound per shot and for the whole film,

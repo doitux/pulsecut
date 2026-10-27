@@ -103,6 +103,7 @@ EN = {
         "There are no scenes yet – please run the recognition first.",
     "Schnitt nicht gefunden": "Shot not found",
     "Clip nicht gefunden": "Clip not found",
+    "Stichwort nicht gefunden": "Keyword not found",
     "Der Clip ist für diese Länge zu kurz.": "The clip is too short for this length.",
     "In dieser Szene ist keine andere freie Stelle mehr.": "There is no other free passage left in this scene.",
     "Schreibe Kdenlive-Projekt …": "Writing Kdenlive project …",
