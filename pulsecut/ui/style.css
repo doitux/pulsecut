@@ -116,6 +116,9 @@ canvas.welle{width:100%;height:70px;display:block;background:#f4f3ef;border-radi
 .player canvas{width:100%;display:block;aspect-ratio:16/9}
 .transport{display:flex;gap:8px;align-items:center;margin-top:8px}
 .transport .zeit{font-variant-numeric:tabular-nums;min-width:120px}
+/* Abspielen/Pause: immer gleich groß und einzeilig – sonst hüpfen Knopf und Timeline beim Umschalten */
+.transport>button{flex:none;white-space:nowrap}
+#pplay{width:8.2em;padding-left:6px;padding-right:6px;text-align:center}
 .tl{position:relative;background:#fff;border-radius:10px;box-shadow:0 1px 2px #0001;margin-top:14px;overflow:hidden}
 .tlscroll{overflow-x:auto;overflow-y:hidden;position:relative}
 .tlinner{position:relative;height:178px}

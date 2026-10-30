@@ -404,8 +404,12 @@ def test_workflow(app):
         assert pg.eval_on_selector("#pcv", "e=>e.getBoundingClientRect().width") < big * 0.6
         pg.click("#pgr button[data-v=gross]")
         pg.wait_for_timeout(300)
+        box = lambda sel: pg.eval_on_selector(sel, "e=>{const b=e.getBoundingClientRect();return [Math.round(b.width),Math.round(b.height)]}")
+        zu = box("#pplay")
         pg.click("#pplay")
         pg.wait_for_function("parseFloat(document.querySelector('#tph').style.left) > 0", timeout=90000)
+        # play and pause button: same size, one line – nothing below jumps when switching
+        assert box("#pplay") == zu and abs(zu[1] - box("#pprev")[1]) <= 1, (zu, box("#pplay"), box("#pprev"))
         x1 = pg.eval_on_selector("#tph", "e=>parseFloat(e.style.left)")
         pg.wait_for_timeout(1200)
         x2 = pg.eval_on_selector("#tph", "e=>parseFloat(e.style.left)")
@@ -413,7 +417,23 @@ def test_workflow(app):
         lit = pg.evaluate("()=>{const d=document.querySelector('#pcv').getContext('2d').getImageData(0,0,960,540).data;"
                           "let s=0;for(let i=0;i<d.length;i+=4000)s+=d[i]+d[i+1]+d[i+2];return s}")
         assert lit > 0, "preview stays black"
+        tl_y = pg.eval_on_selector("#tsh", "e=>e.getBoundingClientRect().top")
         pg.click("#pplay")
+        pg.wait_for_timeout(200)
+        assert box("#pplay") == zu and pg.eval_on_selector("#tsh", "e=>e.getBoundingClientRect().top") == tl_y
+        # also in a narrow window with every preview size
+        pg.set_viewport_size({"width": 760, "height": 950})
+        for gr in ("klein", "mittel", "gross"):
+            pg.click(f"#pgr button[data-v={gr}]")
+            pg.wait_for_timeout(250)
+            k1 = box("#pplay")
+            pg.evaluate("PLY.playing=!PLY.playing; R.timeline.btn()")
+            k2 = box("#pplay")
+            pg.evaluate("PLY.playing=!PLY.playing; R.timeline.btn()")
+            assert k1 == k2 and abs(k1[1] - box("#pprev")[1]) <= 1, (gr, k1, k2, box("#pprev"))
+        pg.set_viewport_size({"width": 1440, "height": 950})
+        pg.click("#pgr button[data-v=gross]")
+        pg.wait_for_timeout(250)
         tl = pg.evaluate("fetch('/api/timeline').then(r=>r.json())")
         cnt = {}
         for s in tl["shots"]:
