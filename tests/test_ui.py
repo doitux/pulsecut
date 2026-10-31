@@ -512,8 +512,27 @@ def test_workflow(app):
         pg.click("#iplus")
         pg.wait_for_selector(".clipwahl button")
         snap("11_clip_einfuegen")
+        # a click on a clip only shows it first – nothing is inserted yet
+        einf = []
+        pg.on("request", lambda q: einf.append(q.url) if "/api/shot/einfuegen" in q.url else None)
+        pg.click(".clipwahl button:not(.voll)")
+        pg.wait_for_selector("#mbox .cwvideo")
+        pg.wait_for_function("document.querySelector('#mbox .cwvideo').readyState >= 1", timeout=30000)
+        pg.wait_for_timeout(400)
+        assert not einf, einf
+        snap("11_clip_vorschau")
+        # space bar belongs to the preview video, not to the film behind it
+        pg.keyboard.press("Space")
+        pg.wait_for_timeout(200)
+        assert pg.evaluate("PLY.playing") is False
+        # back to the selection, then again into the preview and insert the suggested passage
+        pg.click('#mbox [data-x="zurueck"]')
+        pg.wait_for_selector(".clipwahl button")
+        assert not pg.query_selector("#mbox .cwvideo") and not einf
+        pg.click(".clipwahl button:not(.voll)")
+        pg.wait_for_selector("#mbox .cwvideo")
         with pg.expect_response(lambda r: "/api/shot/einfuegen" in r.url) as resp:
-            pg.click(".clipwahl button:not([disabled])")
+            pg.click('#mbox [data-x="vorschlag"]')
         r_ = resp.value.json()
         assert r_["ok"], r_
         pg.wait_for_timeout(1500)
@@ -521,6 +540,29 @@ def test_workflow(app):
         ids6 = [s_["id"] for s_ in tl6["shots"]]
         assert ids6.index(r_["id"]) == ids6.index(anchor["id"]) + 1
         assert tl6["differenz"] == 0 and not [p for p in tl6["probleme"] if p["art"] in ("ueberlappung", "rand")]
+        # "from here": pick a point in the preview video, the passage is inserted from there (or next to it)
+        anchor = next(s_ for s_ in tl6["shots"] if any(c["frei"] for c in pg.evaluate(
+            f"fetch('/api/szenenclips?id={s_['id']}').then(r=>r.json())")["clips"]))
+        pg.evaluate("id=>document.querySelector(`.shot[data-id='${id}']`).scrollIntoView()", anchor["id"])
+        pg.click(f".shot[data-id='{anchor['id']}']")
+        pg.wait_for_selector("#iplus")
+        pg.wait_for_timeout(300)
+        pg.click("#iplus")
+        pg.wait_for_selector(".clipwahl button")
+        pg.click(".clipwahl button:not(.voll)")
+        pg.wait_for_selector("#mbox #cwhier")
+        pg.wait_for_function("document.querySelector('#mbox .cwvideo').readyState >= 1", timeout=30000)
+        pg.eval_on_selector("#mbox .cwvideo", "v=>{v.pause(); v.currentTime = Math.min(1.0, v.duration/3)}")
+        pg.wait_for_function("document.querySelector('#cwhier').innerText.includes('0:01.0') || document.querySelector('#cwhier').innerText.includes('0:00')", timeout=10000)
+        with pg.expect_response(lambda r: "/api/shot/einfuegen" in r.url) as resp:
+            pg.click("#mbox #cwhier")
+        r8 = resp.value.json()
+        assert r8["ok"], r8
+        pg.wait_for_timeout(1500)
+        tl8 = pg.evaluate("fetch('/api/timeline').then(r=>r.json())")
+        ids8 = [s_["id"] for s_ in tl8["shots"]]
+        assert ids8.index(r8["id"]) == ids8.index(anchor["id"]) + 1
+        assert tl8["differenz"] == 0 and not [p for p in tl8["probleme"] if p["art"] in ("ueberlappung", "rand")]
         # remove with the Del key: choice dialog, the shots behind move up, everything before is finished
         tl7 = pg.evaluate("fetch('/api/timeline').then(r=>r.json())")
         victim = tl7["shots"][len(tl7["shots"]) // 2]

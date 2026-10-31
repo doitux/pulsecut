@@ -437,7 +437,8 @@ def api_post(path, b, raw=None, ctype=""):
         if op == "ton":
             return pr.shot_ton(sid, b.get("ton", ""))
         if op == "einfuegen":
-            return pr.shot_einfuegen(sid, b.get("clip") or None)
+            return pr.shot_einfuegen(sid, b.get("clip") or None,
+                                     float(b["src"]) if b.get("src") not in (None, "") else None)
         raise KeyError(path)
     if path == "/api/auffuellen":
         return pr.auffuellen()

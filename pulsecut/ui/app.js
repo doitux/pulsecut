@@ -1134,7 +1134,7 @@ R.timeline = {
     $("#tverl").onclick = () => this.verlaufListe();
     $("#tzoom").oninput = e => { pps = +e.target.value; this.drawTL(); };
     $("#tli").addEventListener("mousedown", e => { if (e.target.closest(".shot")) return; const r = $("#tli").getBoundingClientRect(); PLY.seek((e.clientX - r.left) / pps); });
-    this.key = e => { if (step !== "timeline" || e.target.matches("input,textarea,select")) return; if (e.code === "Space") { e.preventDefault(); PLY.toggle(); this.btn(); } if (e.code === "ArrowRight") $("#pnext").click(); if (e.code === "ArrowLeft") $("#pprev").click();
+    this.key = e => { if (step !== "timeline" || !$("#modal").hidden || e.target.matches("input,textarea,select")) return;   // offener Dialog: Tasten gehören ihm if (e.code === "Space") { e.preventDefault(); PLY.toggle(); this.btn(); } if (e.code === "ArrowRight") $("#pnext").click(); if (e.code === "ArrowLeft") $("#pprev").click();
       if ((e.code === "Delete" || e.code === "Backspace") && SEL && $("#modal").hidden) { e.preventDefault(); this.entfernen(SEL); }
       if ((e.ctrlKey || e.metaKey) && $("#modal").hidden) {
         if (e.code === "KeyZ" && !e.shiftKey) { e.preventDefault(); this.verlauf("zurueck"); }
@@ -1367,9 +1367,10 @@ R.timeline = {
     $("#iclip").onclick = () => vorschauClip(s.clip, s.src);
     $("#iplus").onclick = async () => {
       const d = await api("/api/szenenclips?id=" + s.id);
-      const wahl = await clipWahl(d.clips);
+      if (PLY && PLY.playing) { PLY.pause(); this.btn(); }
+      const wahl = await clipWahl(d);      // {clip, src?} – oder null = abgebrochen
       if (wahl === null) return;
-      const r = await api("/api/shot/einfuegen", {id: s.id, clip: wahl});
+      const r = await api("/api/shot/einfuegen", Object.assign({id: s.id}, wahl));
       if (!r.ok) { toast(r.fehler || T("Nicht möglich")); return; }
       SEL = r.id; await this.load(); toast(T("Eingefügt und gesperrt 🔒 – dafür ist an anderer Stelle ein Schnitt weggefallen"));
     };
@@ -1380,17 +1381,56 @@ R.timeline = {
   }
 };
 
-function clipWahl(clips) {
+function clipWahl(d) {
+  // Auswahl → Vorschau → Einfügen. Ein Klick auf einen Clip fügt nichts ein, sondern zeigt ihn erst: ansehen, Stelle
+  // wählen, dann „Beste Stelle einfügen“ oder „Ab hier einfügen“ – oder zurück zur Auswahl.
+  // Ergebnis: {clip: ""} = automatisch, {clip, src} = dieser Clip (src: ab dieser Stelle), null = abgebrochen.
   return new Promise(res => {
-    const m = $("#modal"), box = $("#mbox");
-    box.innerHTML = `<p><b>${T("Weiteren Clip aus dieser Szene danach einfügen")}</b><br><span class="meta">${T("Der neue Schnitt kommt direkt hinter den ausgewählten und wird gesperrt. Die Filmlänge bleibt – dafür fällt ein ungesperrter Schnitt einer anderen Szene weg.")}</span></p>
-      <div class="clipwahl">${clips.map(c => `<button data-clip="${esc(c.name)}" ${c.frei ? "" : "disabled"} title="${esc(c.name)}">${c.bild ? `<img src="${c.bild}">` : ""}<b>${esc(c.name)}</b><span class="meta">${esc(c.zeit)} · ${komma(c.dauer)} s · ${c.im_film ? T`${c.im_film}× im Film` : T("noch nicht im Film")}${c.frei ? "" : " · " + T("nichts mehr frei")}</span></button>`).join("")}</div>
-      <div class="weiter"><button data-x="abbr">${T("Abbrechen")}</button><button class="pri" data-x="auto" ${clips.some(c => c.frei) ? "" : "disabled"}>${T("Automatisch wählen")}</button></div>`;
-    m.hidden = false;
-    const fertig = v => { m.hidden = true; res(v); };
-    box.querySelectorAll("[data-clip]").forEach(b => b.onclick = () => fertig(b.dataset.clip));
-    box.querySelector('[data-x="abbr"]').onclick = () => fertig(null);
-    box.querySelector('[data-x="auto"]').onclick = () => fertig("");
+    const m = $("#modal"), box = $("#mbox"), clips = d.clips, L = d.laenge || 2;
+    const fertig = v => { const vid = $("video", box); if (vid) { vid.pause(); vid.removeAttribute("src"); vid.load(); } m.hidden = true; box.className = "mbox"; res(v); };
+    const liste = () => {
+      const vid = $("video", box); if (vid) vid.pause();
+      box.className = "mbox";
+      box.innerHTML = `<p><b>${T("Weiteren Clip aus dieser Szene danach einfügen")}</b><br><span class="meta">${T("Der neue Schnitt kommt direkt hinter den ausgewählten und wird gesperrt. Die Filmlänge bleibt – dafür fällt ein ungesperrter Schnitt einer anderen Szene weg.")} ${T("Klick auf einen Clip zeigt ihn zuerst in der Vorschau.")}</span></p>
+        <div class="clipwahl">${clips.map((c, i) => `<button data-i="${i}" data-clip="${esc(c.name)}" class="${c.frei ? "" : "voll"}" title="${esc(c.name)}">${c.bild ? `<img src="${c.bild}">` : ""}<b>${esc(c.name)}</b><span class="meta">${esc(c.zeit)} · ${komma(c.dauer)} s · ${c.im_film ? T`${c.im_film}× im Film` : T("noch nicht im Film")}${c.frei ? "" : " · " + T("nichts mehr frei")}</span></button>`).join("")}</div>
+        <div class="weiter"><button data-x="abbr">${T("Abbrechen")}</button><button class="pri" data-x="auto" ${clips.some(c => c.frei) ? "" : "disabled"}>${T("Automatisch wählen")}</button></div>`;
+      m.hidden = false;
+      box.querySelectorAll("[data-clip]").forEach(b => b.onclick = () => vorschau(clips[+b.dataset.i]));
+      box.querySelector('[data-x="abbr"]').onclick = () => fertig(null);
+      box.querySelector('[data-x="auto"]').onclick = () => fertig({clip: ""});
+    };
+    const vorschau = c => {
+      box.className = "mbox breit";
+      const proz = t => (100 * Math.max(0, Math.min(c.dauer, t)) / (c.dauer || 1)).toFixed(2) + "%";
+      const breite = (a, b) => (100 * Math.max(0, Math.min(c.dauer, b) - Math.max(0, a)) / (c.dauer || 1)).toFixed(2) + "%";
+      box.innerHTML = `<p><b>${esc(c.name)}</b> <span class="meta">${esc(c.zeit)} · ${komma(c.dauer)} s · ${c.im_film ? T`${c.im_film}× im Film` : T("noch nicht im Film")}</span></p>
+        <video class="cwvideo" src="${c.proxy}" controls autoplay preload="auto"></video>
+        <div class="cwband" title="${T("Klick: an diese Stelle springen")}">
+          ${c.belegt.map(([a, b]) => `<span class="cwbelegt" style="left:${proz(a)};width:${breite(a, b)}"></span>`).join("")}
+          ${c.vorschlag !== null ? `<span class="cwvorschlag" style="left:${proz(c.vorschlag)};width:${breite(c.vorschlag, c.vorschlag + L)}"></span>` : ""}
+          <span class="cwhier" style="left:0"></span><span class="cwneu"></span></div>
+        <div class="cwlegende meta">${c.vorschlag !== null ? `<span><i class="cwvorschlag"></i>${T("vorgeschlagene Stelle")}</span>` : ""}${c.belegt.length ? `<span><i class="cwbelegt"></i>${T("schon im Film")}</span>` : ""}<span><i class="cwneu"></i>${T("ab hier")}</span></div>
+        <p class="meta">${c.frei ? T`Eingefügt werden ${komma(L.toFixed(1))} s. Liegt die gewählte Stelle schon im Film, nimmt Pulsecut die nächste freie daneben – verschieben kannst du den Ausschnitt danach auch noch.` : T("In diesem Clip ist keine freie Stelle mehr – bitte einen anderen wählen.")}</p>
+        <div class="weiter"><button data-x="zurueck">${T("← Zurück zur Auswahl")}</button><span style="flex:1"></span><button data-x="abbr">${T("Abbrechen")}</button>
+          ${c.frei ? `<button data-x="hier" id="cwhier">${T("Ab hier einfügen")}</button><button class="pri" data-x="vorschlag">${T("✓ Vorgeschlagene Stelle einfügen")}</button>` : ""}</div>`;
+      const vid = $(".cwvideo", box), band = $(".cwband", box);
+      const pos = () => Math.max(0, Math.min(c.dauer, vid.currentTime || 0));
+      const zeige = () => {
+        const t = pos();
+        $(".cwhier", band).style.left = proz(t);
+        $(".cwneu", band).style.left = proz(t); $(".cwneu", band).style.width = breite(t, t + L);
+        const h = $("#cwhier"); if (h) h.textContent = T`Ab hier einfügen (${fmt1(t)})`;
+      };
+      vid.addEventListener("loadedmetadata", () => { if (c.vorschlag !== null) vid.currentTime = c.vorschlag; zeige(); });
+      vid.addEventListener("timeupdate", zeige); vid.addEventListener("seeked", zeige);
+      band.onclick = e => { const r = band.getBoundingClientRect(); vid.currentTime = Math.max(0, Math.min(c.dauer, (e.clientX - r.left) / r.width * c.dauer)); zeige(); };
+      zeige();
+      box.querySelector('[data-x="zurueck"]').onclick = liste;
+      box.querySelector('[data-x="abbr"]').onclick = () => fertig(null);
+      const h = box.querySelector('[data-x="hier"]'); if (h) h.onclick = () => fertig({clip: c.name, src: Math.round(pos() * 100) / 100});
+      const v = box.querySelector('[data-x="vorschlag"]'); if (v) v.onclick = () => fertig({clip: c.name});
+    };
+    liste();
   });
 }
 

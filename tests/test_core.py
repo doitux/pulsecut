@@ -290,3 +290,53 @@ def test_balance_shares_moves_shots(projekt):
     ist2 = projekt.anteile_ist(projekt.relayout()[0])
     assert ist2[a] > ist[a] and ist2[b] < ist[b]
     assert problems(projekt) == ([], 0)
+
+
+def test_insert_previewed_clip_at_a_chosen_point(projekt):
+    """Step 9, insert with preview: the suggested passage is what gets inserted; 'from here' takes that point – or the
+    nearest free passage next to it when it is already in the film; undo takes it out again."""
+    from pulsecut import planer as PL_
+    prepare(projekt)
+    tl, _ = projekt.relayout()
+    d = None
+    for s in tl:
+        d0 = projekt.szenen_clips(s["id"])
+        c = next((c for c in d0["clips"] if c["frei"] and c["dauer"] >= 4 * d0["laenge"]), None)
+        if c:
+            sh, d, pick = s, d0, c
+            break
+    assert d, "no clip with room in the test footage"
+    L = d["laenge"]
+    assert pick["proxy"].endswith(".webm") and pick["vorschlag"] is not None
+    cl = projekt.clip_by_name()
+    assert pick["belegt"] == [[round(s["src"], 2), round(s["src"] + s["dur"], 2)] for s in tl
+                              if s["clip"] == pick["name"] and s["dur"] > 0]
+    # 1) the suggested passage
+    r = projekt.shot_einfuegen(sh["id"], pick["name"])
+    assert r["ok"] and abs(r["src"] - pick["vorschlag"]) < 0.01, (r, pick["vorschlag"])
+    projekt.rueckgaengig()
+    assert r["id"] not in [s["id"] for s in projekt.relayout()[0]]
+    # 2) "from here" at a free point: starts there (raster 0.25 s)
+    tl, _ = projekt.relayout()
+    belegt = [PL_.reserved(s, projekt.xf()) for s in tl if s["clip"] == pick["name"]]
+    c = cl[pick["name"]]
+    frei = [t / 4 for t in range(int(PL_.EDGE * 4) + 1, int((c.dur - L - 0.5) * 4))
+            if not any(PL_.overlaps(t / 4 - 0.3, t / 4 + L + 0.3, a, b) for a, b in belegt)
+            and not (c.excl and PL_.hits_excl(c, t / 4, t / 4 + L))]
+    assert frei
+    want = frei[len(frei) // 2]
+    r = projekt.shot_einfuegen(sh["id"], pick["name"], src=want + 0.1)
+    assert r["ok"] and abs(r["src"] - want) <= 0.25 + 1e-6, (r, want)
+    tl, _ = projekt.relayout()
+    assert problems(projekt, allow_unchrono=True) == ([], 0)
+    # 3) "from here" inside that passage (now in the film): the nearest free passage, no overlap
+    new = next(s for s in tl if s["id"] == r["id"])
+    r2 = projekt.shot_einfuegen(r["id"], pick["name"], src=new["src"] + 0.2)
+    if r2["ok"]:
+        tl, _ = projekt.relayout()
+        n2 = next(s for s in tl if s["id"] == r2["id"])
+        assert not PL_.overlaps(*PL_.reserved(n2, projekt.xf()), *PL_.reserved(new, 0.0))
+        assert problems(projekt, allow_unchrono=True) == ([], 0)
+        projekt.rueckgaengig()
+    projekt.rueckgaengig()
+    assert r["id"] not in [s["id"] for s in projekt.relayout()[0]]

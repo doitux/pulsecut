@@ -576,9 +576,10 @@ def blocked_by(timeline, sh, src, xf):
             and overlaps(a, b, *reserved(s, xf))]
 
 
-def best_free_window(timeline, sh, scene_clips, xf, planer_like=None, exclude_ids=(), slack=0.15):
+def best_free_window(timeline, sh, scene_clips, xf, planer_like=None, exclude_ids=(), slack=0.15, nahe=None):
     """Bester freier Ausschnitt gleicher Länge in der Szene (für „andere Stelle“ und aufgegebene Nachbarn).
-    slack: Reserve, weil sich die Dauer je nach Lage im Raster minimal ändern kann."""
+    slack: Reserve, weil sich die Dauer je nach Lage im Raster minimal ändern kann.
+    nahe: gewünschter Anfang (s) – dann der freie Ausschnitt, der am nächsten daran liegt, statt des besten."""
     best = None
     L = sh["dur"] + slack
     for c in scene_clips:
@@ -594,7 +595,10 @@ def best_free_window(timeline, sh, scene_clips, xf, planer_like=None, exclude_id
                 continue
             if c.name == sh["clip"] and abs(st - sh["src"]) < sh["dur"]:
                 continue   # wirklich eine andere Stelle
-            sc = window_score(c, st, sh["dur"]) * (0.85 if any(s["clip"] == c.name for s in timeline) else 1.0)
+            if nahe is not None:
+                sc = -abs(st - float(nahe))
+            else:
+                sc = window_score(c, st, sh["dur"]) * (0.85 if any(s["clip"] == c.name for s in timeline) else 1.0)
             if best is None or sc > best[0]:
                 best = (sc, c.name, st)
     return best

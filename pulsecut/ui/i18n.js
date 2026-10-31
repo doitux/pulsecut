@@ -11,6 +11,17 @@ function T(s, ...v) {
   return v.length ? out.replace(/\{(\d+)\}/g, (_, i) => v[+i]) : out;
 }
 const EN = {
+ "Klick auf einen Clip zeigt ihn zuerst in der Vorschau.": "Clicking a clip shows it in the preview first.",
+ "Klick: an diese Stelle springen": "Click: jump to this point",
+ "vorgeschlagene Stelle": "suggested passage",
+ "schon im Film": "already in the film",
+ "ab hier": "from here",
+ "Eingefügt werden {0} s. Liegt die gewählte Stelle schon im Film, nimmt Pulsecut die nächste freie daneben – verschieben kannst du den Ausschnitt danach auch noch.": "{0} s are inserted. If the chosen point is already in the film, Pulsecut takes the nearest free passage next to it – you can still move the passage afterwards.",
+ "In diesem Clip ist keine freie Stelle mehr – bitte einen anderen wählen.": "There is no free passage left in this clip – please pick another one.",
+ "← Zurück zur Auswahl": "← Back to the selection",
+ "Ab hier einfügen": "Insert from here",
+ "✓ Vorgeschlagene Stelle einfügen": "✓ Insert the suggested passage",
+ "Ab hier einfügen ({0})": "Insert from here ({0})",
  "Film noch nicht geplant": "film not planned yet",
  "Mehr Material: weitere Clips in Schritt 6 mit „⇆ Clips hierher holen“ zuordnen oder unten einen Clip auf „Wichtig“ setzen.": "More material: assign further clips in step 6 with “⇆ Get clips here”, or set a clip below to “Important”.",
  "kein brauchbares Material": "no usable material",

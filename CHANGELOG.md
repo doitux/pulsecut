@@ -6,6 +6,12 @@ tests is published as a [nightly test build](https://github.com/doitux/pulsecut/
 The preview versions 1.0.0–1.0.10 published before have been withdrawn; their changes are listed below by date.
 
 ## Unreleased (nightly)
+- Timeline (step 9), “insert another clip of this scene”: **a click on a clip shows it first** instead of inserting it
+  at once. The preview plays the clip from the suggested passage; a bar shows the suggested passage, the parts already
+  in the film and the passage from the current point. Then “✓ Insert the suggested passage”, “Insert from here” (from
+  the point in the video – or the nearest free passage next to it), “← Back to the selection” or “Cancel”.
+- Fixed: with a dialog open in the timeline, the space bar and the arrow keys no longer control the film behind it;
+  the film pauses when the insert dialog opens.
 - Timeline (step 9): the Play/Pause button keeps the same size and stays on one line – before, “▶ Abspielen” could
   wrap into two lines in a narrow window, so the button and the timeline below jumped on every switch.
 - Step 7, weighting: **above 1× the slider also takes weaker passages.** Up to 1× Pulsecut only uses good passages

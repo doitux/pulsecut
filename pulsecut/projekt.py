@@ -1786,13 +1786,18 @@ class Projekt:
                 out.append({"name": c.name, "dauer": round(c.dur, 1), "bild": self.thumb(c, (cand[2] + proto["dur"] / 2)
                                                                                        if cand else c.dur / 2),
                             "im_film": sum(1 for s in tl if s["clip"] == c.name), "frei": bool(cand),
-                            "zeit": c.start.strftime("%H:%M") if c.start else ""})
-            return {"szene": sh.get("szene"), "clips": out}
+                            "zeit": c.start.strftime("%H:%M") if c.start else "",
+                            "vorschlag": round(cand[2], 2) if cand else None, "proxy": f"/media/proxy/{c.hash}.webm",
+                            # schon im Film verwendete Stellen (für die Vorschau)
+                            "belegt": [[round(s["src"], 2), round(s["src"] + s["dur"], 2)] for s in tl
+                                       if s["clip"] == c.name and s["dur"] > 0]})
+            return {"szene": sh.get("szene"), "clips": out, "laenge": round(proto["dur"], 2)}
 
     @aktion("Clip eingefügt")
-    def shot_einfuegen(self, sid, clip=None):
+    def shot_einfuegen(self, sid, clip=None, src=None):
         """Einen weiteren Ausschnitt aus derselben Szene direkt hinter diesem Schnitt einfügen (gesperrt). Platz dafür
-        machen ungesperrte Schnitte anderer Szenen (die Szene bekommt also mehr Zeit); die Filmlänge bleibt."""
+        machen ungesperrte Schnitte anderer Szenen (die Szene bekommt also mehr Zeit); die Filmlänge bleibt.
+        src (nur mit clip): ab dieser Stelle im Clip – bzw. der nächsten freien Stelle daneben."""
         with self.lock:
             tl, _ = self.relayout()
             sh = next((s for s in tl if s["id"] == sid), None)
@@ -1804,7 +1809,8 @@ class Projekt:
                 clips = [c for c in clips if c.name == clip]
             k = int(self.d["schnitt"].get("k") or 0) or self.k_default()
             proto = {"id": "neu", "clip": "", "src": 0.0, "dur": self.layout.unit_len() * k, "k": k}
-            cand = PL.best_free_window(tl, proto, clips, self.xf(), slack=self._slack(proto))
+            nahe = float(src) if clip and src is not None else None
+            cand = PL.best_free_window(tl, proto, clips, self.xf(), slack=self._slack(proto), nahe=nahe)
             if not cand:
                 return {"ok": False, "fehler": _t("In diesem Clip ist keine freie Stelle mehr.") if clip
                         else _t("In dieser Szene ist keine freie Stelle mehr.")}
@@ -1825,7 +1831,7 @@ class Projekt:
             self.settle(tl)
             self.d["timeline"] = self.clean_timeline(tl)
             self.save()
-            return {"ok": True, "id": new["id"]}
+            return {"ok": True, "id": new["id"], "src": new["src"]}
 
     AUSGLEICH = ("rest", "nachbar", "kuerzer")
     AEHNLICH_RAND = 3.0   # so weit um einen gelöschten Ausschnitt herum (in derselben Einstellung) nicht nachrücken
