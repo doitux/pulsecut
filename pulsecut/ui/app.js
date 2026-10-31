@@ -1134,7 +1134,15 @@ R.timeline = {
     $("#tverl").onclick = () => this.verlaufListe();
     $("#tzoom").oninput = e => { pps = +e.target.value; this.drawTL(); };
     $("#tli").addEventListener("mousedown", e => { if (e.target.closest(".shot")) return; const r = $("#tli").getBoundingClientRect(); PLY.seek((e.clientX - r.left) / pps); });
-    this.key = e => { if (step !== "timeline" || !$("#modal").hidden || e.target.matches("input,textarea,select")) return;   // offener Dialog: Tasten gehören ihm if (e.code === "Space") { e.preventDefault(); PLY.toggle(); this.btn(); } if (e.code === "ArrowRight") $("#pnext").click(); if (e.code === "ArrowLeft") $("#pprev").click();
+    // Tasten in der Timeline – nicht, solange ein Dialog offen ist (dann gehören sie ihm) oder in Eingabefeldern
+    // Leertaste = Abspielen/Pause überall in der Timeline, auch nach einem Klick auf einen Knopf oder den Zoom-Regler
+    // (der Knopf gibt dafür den Fokus ab, sonst würde die Leertaste ihn zusätzlich „drücken“ und es bliebe beim Alten).
+    this.key = e => {
+      if (step !== "timeline" || !$("#modal").hidden || !PLY) return;
+      const regler = e.target.matches("input[type=range]");
+      if (e.target.matches("input,textarea,select,[contenteditable]") && !(regler && e.code === "Space")) return;
+      if (e.code === "Space") { e.preventDefault(); if (e.target.closest("button,.auswahl") || regler) e.target.blur(); PLY.toggle(); this.btn(); return; }
+      if (e.code === "ArrowRight") $("#pnext").click(); if (e.code === "ArrowLeft") $("#pprev").click();
       if ((e.code === "Delete" || e.code === "Backspace") && SEL && $("#modal").hidden) { e.preventDefault(); this.entfernen(SEL); }
       if ((e.ctrlKey || e.metaKey) && $("#modal").hidden) {
         if (e.code === "KeyZ" && !e.shiftKey) { e.preventDefault(); this.verlauf("zurueck"); }

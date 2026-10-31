@@ -6,6 +6,8 @@ tests is published as a [nightly test build](https://github.com/doitux/pulsecut/
 The preview versions 1.0.0–1.0.10 published before have been withdrawn; their changes are listed below by date.
 
 ## Unreleased (nightly)
+- Fixed (step 9): the space bar starts and pauses the preview again, and ←/→ jump between shots – this was broken
+  in nightly 39. The space bar now also works right after clicking a button or using the zoom slider.
 - Timeline (step 9), “insert another clip of this scene”: **a click on a clip shows it first** instead of inserting it
   at once. The preview plays the clip from the suggested passage; a bar shows the suggested passage, the parts already
   in the film and the passage from the current point. Then “✓ Insert the suggested passage”, “Insert from here” (from

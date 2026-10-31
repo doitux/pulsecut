@@ -404,6 +404,33 @@ def test_workflow(app):
         assert pg.eval_on_selector("#pcv", "e=>e.getBoundingClientRect().width") < big * 0.6
         pg.click("#pgr button[data-v=gross]")
         pg.wait_for_timeout(300)
+        # space bar = play/pause in step 9 – also after clicking around with the mouse (buttons, ruler, shots, zoom, …)
+        def leertaste(name, act):
+            act()
+            pg.wait_for_timeout(250)
+            assert pg.evaluate("PLY.playing") is False, name
+            pg.keyboard.press("Space")
+            pg.wait_for_timeout(300)
+            assert pg.evaluate("PLY.playing") is True, f"space does not start playing after: {name}"
+            pg.keyboard.press("Space")
+            pg.wait_for_timeout(300)
+            assert pg.evaluate("PLY.playing") is False, f"space does not pause after: {name}"
+
+        def ruler_ziehen():
+            r = pg.locator("#trul").bounding_box()
+            pg.mouse.move(r["x"] + 300, r["y"] + 5)
+            pg.mouse.down()
+            pg.mouse.move(r["x"] + 420, r["y"] + 5)
+            pg.mouse.up()
+
+        leertaste("nothing", lambda: None)
+        leertaste("play button clicked twice", lambda: (pg.click("#pplay"), pg.wait_for_timeout(300), pg.click("#pplay")))
+        leertaste("click on the ruler", lambda: pg.click("#trul", position={"x": 200, "y": 5}))
+        leertaste("dragging the playhead", ruler_ziehen)
+        leertaste("click on a shot", lambda: pg.click("#tsh .shot >> nth=3"))
+        leertaste("zoom slider", lambda: pg.click("#tzoom"))
+        leertaste("preview size", lambda: pg.click("#pgr button[data-v=gross]"))
+        leertaste("click on the preview", lambda: pg.click("#pcv"))
         box = lambda sel: pg.eval_on_selector(sel, "e=>{const b=e.getBoundingClientRect();return [Math.round(b.width),Math.round(b.height)]}")
         zu = box("#pplay")
         pg.click("#pplay")
