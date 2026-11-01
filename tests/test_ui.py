@@ -664,6 +664,36 @@ def test_workflow(app):
         pg.wait_for_selector("#xgo")
         pg.click(".xf[value='1080p']")
         pg.click(".xf[value='720p']")
+        # frame rate: automatic like the videos (30 fps, not 25)
+        assert "30 fps" in pg.inner_text("#xbrw .auswahl") and "30 fps 100 %" in pg.inner_text("#xbrinfo")
+        # quality presets → slider and size estimate follow
+        mb = lambda: pg.inner_text(".xmb[data-f='720p']")
+        groesse = lambda: int("".join(ch for ch in mb() if ch.isdigit()) or 0)
+        pg.click('[data-f="xstufe"] button[data-v=web]')
+        pg.wait_for_function("document.querySelector('#xcrfv').innerText.includes('CRF 23')")
+        web = groesse()
+        pg.click('[data-f="xstufe"] button[data-v=beamer]')
+        pg.wait_for_function("document.querySelector('#xcrfv').innerText.includes('CRF 17')")
+        assert groesse() > web > 0, (web, mb())
+        assert "Beamer" in pg.inner_text("#xhinweis") or "projector" in pg.inner_text("#xhinweis")
+        # own setting with the slider (right = better)
+        pg.eval_on_selector("#xcrf", "e=>{e.value=+e.min + +e.max - 19;e.dispatchEvent(new Event('input'));e.dispatchEvent(new Event('change'))}")
+        pg.wait_for_function("document.querySelector('#xcrfv').innerText.includes('CRF 19')")
+        pg.wait_for_function("""!document.querySelector('[data-f="xstufe"] button.on')""", timeout=10000)
+        assert pg.evaluate("fetch('/api/exporte').then(r=>r.json())")["qualitaet"]["crf"] == 19
+        # target size: field, hint what it corresponds to; then back to "Web" for the export
+        pg.check("#xgr")
+        pg.wait_for_function("!document.querySelector('#xmb').disabled")
+        pg.fill("#xmb", "3")
+        pg.dispatch_event("#xmb", "change")
+        pg.wait_for_function("document.querySelector('.xmb[data-f=\"720p\"]').innerText.includes('3 MB')")
+        assert pg.is_disabled("#xcrf") and pg.inner_text("#xgrinfo")
+        snap("11_export_qualitaet")
+        pg.uncheck("#xgr")
+        pg.click('[data-f="xstufe"] button[data-v=web]')
+        pg.wait_for_function("document.querySelector('#xcrfv').innerText.includes('CRF 23')")
+        einst = pg.evaluate("fetch('/api/exporte').then(r=>r.json())")["qualitaet"]
+        assert einst["modus"] == "qualitaet" and einst["stufe"] == "web" and einst["crf"] == 23
         pg.click("#xgo")
         j = wait_job("export", 1800)
         assert not j["fehler"], j["fehler"]
@@ -671,6 +701,10 @@ def test_workflow(app):
         snap("11_export")
         files = zustand()["projekt"]["exporte"]
         assert any(f.endswith(".kdenlive") for f in files) and any(f.endswith("_720p.mp4") for f in files)
+        mp4 = next(f for f in files if f.endswith("_720p.mp4"))
+        rate = subprocess.run(["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=r_frame_rate",
+                               "-of", "csv=p=0", mp4], capture_output=True, text=True).stdout.strip()
+        assert rate == "30/1", rate
         b.close()
     assert not [e for e in errors if "favicon" not in e], errors
     if lang == "en":

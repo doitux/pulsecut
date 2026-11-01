@@ -19,8 +19,8 @@ from . import hwdec as HW
 from . import ki as KI
 from . import planer as PL
 from .musik import AUDIO_EXT, MUSIC_VERSION, MusikLayout, analyse_music, render_clicktrack, render_music_mix
-from .util import (CONFIG_HOME, FPS, atomic_write_json, low_priority, fmt_dur, log, md5, read_json, safe_name,
-                   set_log_target)
+from .util import (BILDRATEN, CONFIG_HOME, FPS, atomic_write_json, bildrate_naechste, bildrate_text, fmt_dur, log,
+                   low_priority, md5, read_json, safe_name, set_log_target)
 from .video import (ANALYSE_VERSION, BEWEGUNG_LABEL, VIDEO_EXT, Clip, analyse_clip, compute_quality, keyframes_only,
                     make_proxy, motion_label, prepare_clip_arrays, segment_views, window_motion)
 
@@ -364,6 +364,8 @@ class Projekt:
         with self.lock:
             self.clips = clips
             self.sort_clips()
+            if self.layout is not None:   # Bildrate der Videos jetzt bekannt → Musik-Übergänge auf ihre Bilder
+                self.update_layout()
         job.text = _t("{n} Videos analysiert", n=len(clips))
         if "videos" not in self.d["erledigt"]:
             self.d["erledigt"].append("videos")
@@ -432,8 +434,26 @@ class Projekt:
         idx = {t["datei"]: i for i, t in enumerate(tr)}
         kz = {idx[n]: m for n, m in (self.d.get("kuerzen") or {}).items() if n in idx}
         self.layout = MusikLayout(tr, mu.get("art", "direkt"), mu.get("dauer", 2.0), self.d.get("ziel_dauer"), kz,
-                                  self.d["schnitt"].get("raster", "takt"), self.d.get("ende_weg", 0))
+                                  self.d["schnitt"].get("raster", "takt"), self.d.get("ende_weg", 0),
+                                  fps=self.bildrate()["fps"])
         return self.layout
+
+    def bildrate(self):
+        """Bildrate für Kdenlive-Projekt und Rendern: von Hand gewählt (Schritt 10) oder automatisch die der meisten
+        Videos (nach Länge gewichtet, auf die nächste übliche Bildrate gerundet – Handys: meist 30 bzw. 29,97)."""
+        wahl = str((self.d.get("export") or {}).get("bildrate") or "auto")
+        anteil = {}
+        for c in self.clips:
+            if c.prio != "raus" and c.fps:
+                k = bildrate_naechste(c.fps)
+                anteil[k] = anteil.get(k, 0.0) + max(c.dur, 0.1)
+        auto = max(anteil, key=anteil.get) if anteil else "30"
+        key = wahl if wahl in BILDRATEN else auto
+        n, d = BILDRATEN[key]
+        tot = sum(anteil.values()) or 1.0
+        return {"key": key, "num": n, "den": d, "fps": n / d, "text": bildrate_text(key), "auto": key == auto,
+                "wahl": wahl if wahl in BILDRATEN else "auto", "auto_key": auto, "auto_text": bildrate_text(auto),
+                "verteilung": {k: round(v / tot, 3) for k, v in sorted(anteil.items(), key=lambda x: -x[1])}}
 
     def music_mix_file(self):
         layout = self.layout
@@ -1971,6 +1991,43 @@ class Projekt:
             return {"ok": True}
 
     # ------------------------------------------------------------------ Export
+    def export_info(self):
+        """Für Schritt 10: Bildrate, Qualität (Stufe/Regler oder Zielgröße) und die geschätzte Größe je Format."""
+        from . import export as EX
+        e = self.d.get("export") or {}
+        q = EX.qualitaet(e.get("qualitaet"))
+        br = self.bildrate()
+        D = self.layout.D if self.layout else 0.0
+        f = float(e.get("faktor") or 1.0)
+        return {"qualitaet": q, "bildrate": br, "dauer": round(D, 1), "faktor": round(f, 2),
+                "bildraten": {k: bildrate_text(k) for k in BILDRATEN},
+                "schaetzung": {k: EX.schaetzung_mb(k, D, q, br["fps"], f) for k in EX.FORMATE},
+                "entspricht": {k: EX.zielgroesse_wie(k, D, q, br["fps"], f) for k in EX.FORMATE}
+                if q["modus"] == "groesse" else {},
+                "stufen": {k: {"label": _t(v["label"]), "crf": v["crf"], "hinweis": _t(v["hinweis"])}
+                           for k, v in EX.STUFEN.items()}, "crf_bereich": list(EX.CRF_BEREICH)}
+
+    def export_setzen(self, b):
+        from . import export as EX
+        e = self.d.setdefault("export", {})
+        if "bildrate" in b:
+            neu = str(b["bildrate"]) if str(b["bildrate"]) in BILDRATEN else "auto"
+            if neu != (e.get("bildrate") or "auto"):
+                e["bildrate"] = neu
+                with self.lock:
+                    self.update_layout()      # Musik-Übergänge auf die Bilder der neuen Bildrate
+        q = dict(e.get("qualitaet") or {})
+        if b.get("stufe") in EX.STUFEN:
+            q.update(stufe=b["stufe"], crf=EX.STUFEN[b["stufe"]]["crf"])
+        if "crf" in b:
+            q.update(crf=b["crf"], stufe=b.get("stufe") or "")
+        for k in ("modus", "mb"):
+            if k in b:
+                q[k] = b[k]
+        e["qualitaet"] = EX.qualitaet(q)
+        self.save()
+        return self.export_info()
+
     def export_job(self, job, formate, kdenlive=True):
         from . import export as EX
         from .util import tools_status
@@ -1987,6 +2044,9 @@ class Projekt:
             k += 1
             job.fortschritt = k / n
         melt_ok = tools_status().get("melt")
+        ex = self.d.get("export") or {}
+        q = EX.qualitaet(ex.get("qualitaet"))
+        D = self.layout.D if self.layout else 60.0
         for fmt in formate:
             F = EX.FORMATE[fmt]
             out = self.export_dir / f"{base}_{fmt}.{F['ext']}"
@@ -2000,13 +2060,21 @@ class Projekt:
                 xml = self.dirs["tmp"] / f"render_{fmt}.mlt"
                 try:
                     EX.write_project(self, xml, F["W"], F["H"], mit_marker=False)
-                    EX.render_melt(xml, out, fmt, prog)
+                    EX.render_melt(xml, out, fmt, prog, q=q, D=D)
                     done = True
                 except Exception as e:
                     log(_t("melt: {e} – nehme ffmpeg (ohne Überblendungen)", e=e))
             if not done:
-                EX.render_ffmpeg(self, out, fmt, prog)
+                EX.render_ffmpeg(self, out, fmt, prog, q=q)
             outs.append(str(out))
+            if fmt != "master" and q["modus"] == "qualitaet" and out.exists():
+                # Größenschätzung an diesem Material eichen (wie viel Bewegung, wie viele Details)
+                est = EX.schaetzung_mb(fmt, D, q, self.bildrate()["fps"], 1.0)
+                if est > 0:
+                    f = out.stat().st_size / 1024 / 1024 / est
+                    alt = float(ex.get("faktor") or 0)
+                    self.d.setdefault("export", {})["faktor"] = round(float(np.clip(f if not alt else (alt + f) / 2,
+                                                                                    0.2, 5.0)), 3)
             k += 1
             job.fortschritt = k / n
         self.d["exporte"] = outs

@@ -235,8 +235,10 @@ class MusikLayout:
     """Ordnet die Stücke auf der Zeitachse an (direkt hintereinander oder mit Überblendung), kürzt auf Wunsch
     einzelne Stücke vorne oder hinten (immer an einem Taktanfang) und liefert das Schnittraster."""
 
-    def __init__(self, tracks, uebergang="direkt", blende=2.0, ziel=None, kuerzen=None, raster="takt", ende_weg=0):
+    def __init__(self, tracks, uebergang="direkt", blende=2.0, ziel=None, kuerzen=None, raster="takt", ende_weg=0,
+                 fps=FPS):
         self.tracks = tracks
+        self.fps = float(fps or FPS)   # Bildrate des Projekts: Musik-Übergänge liegen auf ganzen Videobildern
         self.ende_weg = max(0, int(ende_weg or 0))   # so viele Raster-Einheiten am Filmende weglassen (Timeline)
         self.xf = float(blende) if uebergang == "blende" else 0.0
         self.ziel = float(ziel) if ziel else None
@@ -305,8 +307,8 @@ class MusikLayout:
                          "fade_in": fi, "fade_out": fo, "lane": i % 2, "modus": modes[i], "gekuerzt": cut[i]})
             t = tl + (s_out - max(0.0, s_in))
         for sg in segs:   # Kdenlive setzt Clips auf ganze Videobilder → Raster aus der gerundeten Lage
-            sg["tl_start"] = round(sg["tl_start"] * FPS) / FPS
-            sg["src_in"] = round(sg["src_in"] * FPS) / FPS
+            sg["tl_start"] = round(sg["tl_start"] * self.fps) / self.fps
+            sg["src_in"] = round(sg["src_in"] * self.fps) / self.fps
         self.segments = segs
         self.D = segs[-1]["tl_start"] + segs[-1]["src_out"] - segs[-1]["src_in"] if segs else 0.0
         self.switches = [sg["tl_start"] + (self.xf / 2 if self.xf else 0.0) for sg in segs[1:]]

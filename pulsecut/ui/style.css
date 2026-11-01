@@ -246,3 +246,7 @@ select.awquelle{position:absolute!important;width:1px!important;height:1px!impor
 .cwneu{border:2px solid var(--acc);border-radius:3px;box-sizing:border-box;z-index:1}.cwlegende i.cwneu{background:none}
 .cwhier{width:2px;background:var(--acc);margin-left:-1px;z-index:2}
 .cwlegende{display:flex;gap:14px;flex-wrap:wrap}.cwlegende i{display:inline-block;width:12px;height:10px;border-radius:2px;margin-right:5px;vertical-align:-1px}
+/* Schritt 10: Qualität, Zielgröße, Bildrate */
+.xregler{gap:10px;margin-top:10px}.xregler input{width:260px}.xregler.aus,#xstufen.aus{opacity:.45}
+.xfz .xmb{margin-left:4px}
+.warn{color:#a86400}

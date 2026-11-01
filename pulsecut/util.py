@@ -15,7 +15,25 @@ from pathlib import Path
 
 import numpy as np
 
-FPS = 25
+FPS = 25                 # nur noch Standard für alte Aufrufe – die Bildrate eines Projekts kommt aus seinen Videos
+
+# übliche Bildraten (Zähler, Nenner): Kino, PAL, NTSC/Handy, und die doppelten
+BILDRATEN = {"24": (24, 1), "2398": (24000, 1001), "25": (25, 1), "2997": (30000, 1001), "30": (30, 1), "50": (50, 1),
+             "5994": (60000, 1001), "60": (60, 1)}
+
+
+def bildrate_naechste(fps):
+    """Gemessene Bildrate → nächste übliche (Schlüssel aus BILDRATEN)."""
+    fps = float(fps or 0)
+    if fps <= 0:
+        return "30"
+    return min(BILDRATEN, key=lambda k: abs(BILDRATEN[k][0] / BILDRATEN[k][1] - fps))
+
+
+def bildrate_text(key):
+    n, d = BILDRATEN[key]
+    v = n / d
+    return f"{v:.2f}".rstrip("0").rstrip(".") if d != 1 else str(n)
 
 CACHE_HOME = Path(os.environ.get("XDG_CACHE_HOME") or Path.home() / ".cache") / "pulsecut"
 DATA_HOME = Path(os.environ.get("XDG_DATA_HOME") or Path.home() / ".local" / "share") / "pulsecut"

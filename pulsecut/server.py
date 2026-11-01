@@ -191,8 +191,8 @@ def api_get(path, q):
                   for s in tl if s["clip"] == sh["clip"] and s is not sh]
         return {"bereich": rg, "andere": others, "xf": pr.xf(), "gap": PL.GAP}
     if path == "/api/exporte":
-        return {"formate": {k: _t(v["label"]) for k, v in EX.FORMATE.items()}, "dateien": pr.d.get("exporte", []),
-                "melt": STATE.tools.get("melt")}
+        return dict({"formate": {k: _t(v["label"]) for k, v in EX.FORMATE.items()}, "dateien": pr.d.get("exporte", []),
+                     "melt": STATE.tools.get("melt")}, **pr.export_info())
     if path == "/api/titelstile":
         from . import titel as TI
         return {"stile": TI.stil_liste(get_lang()), "schriften": TI.schriften(), "aktuell": pr.titelstil()}
@@ -454,6 +454,8 @@ def api_post(path, b, raw=None, ctype=""):
         return pr.anteile_ausgleichen()
     if path == "/api/ende/zuruecknehmen":
         return pr.ende_zuruecknehmen()
+    if path == "/api/export/einstellungen":
+        return pr.export_setzen(b)
     if path == "/api/export":
         fm = [f for f in b.get("formate", []) if f in EX.FORMATE]
         pr.start_job("export", pr.export_job, fm, bool(b.get("kdenlive", True)))

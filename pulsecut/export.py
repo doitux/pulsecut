@@ -2,11 +2,13 @@
 import json
 import math
 import os
+import threading
 import re
 import subprocess
 import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager
 from pathlib import Path
 from xml.sax.saxutils import escape
 
@@ -14,6 +16,48 @@ import numpy as np
 
 from .i18n import L as _t
 from .util import FPS, clean_env, ff_path, ffmpeg_cmd, find_font, md5, run, tc, write_png
+
+# Bildrate des gerade laufenden Exports. Jeder Export setzt sie mit bildrate() auf die des Projekts (die seiner Videos,
+# z. B. 30 oder 30000/1001) – Kdenlive-Projekt, Schnitte, Musik und gerenderter Film laufen damit im selben Raster.
+FPS_ND = (FPS, 1)
+_BR_LOCK = threading.RLock()
+
+
+@contextmanager
+def bildrate(num, den=1):
+    global FPS, FPS_ND
+    with _BR_LOCK:
+        alt = FPS, FPS_ND
+        FPS, FPS_ND = num / den, (int(num), int(den))
+        try:
+            yield
+        finally:
+            FPS, FPS_ND = alt
+
+
+def _tc(frames):
+    return tc(frames, FPS)
+
+
+def fps_ganz():
+    return int(round(FPS))
+
+
+def fps_bruch():
+    return f"{FPS_ND[0]}/{FPS_ND[1]}"
+
+
+def fps_text():
+    v = FPS_ND[0] / FPS_ND[1]
+    return str(FPS_ND[0]) if FPS_ND[1] == 1 else f"{v:.2f}"
+
+
+def kdenlive_profil(W, H):
+    """Name des passenden Kdenlive-Profils (nur bei 1920×1080 gibt es feste Namen), z. B. atsc_1080p_2997."""
+    if (W, H) != (1920, 1080):
+        return ""
+    n, d = FPS_ND
+    return f"atsc_1080p_{n if d == 1 else int(round(n / d * 100))}"
 
 
 class KdenliveWriter:
@@ -31,15 +75,15 @@ class KdenliveWriter:
 
     def filter_xml(self, props, fin=None, fout=None, indent="   "):
         fid = self.nid("filter")
-        attrs = f' in="{tc(fin)}" out="{tc(fout)}"' if fin is not None else ""
+        attrs = f' in="{_tc(fin)}" out="{_tc(fout)}"' if fin is not None else ""
         return f'{indent}<filter id="{fid}"{attrs}>\n' + self.props(props, indent + " ") + f"\n{indent}</filter>"
 
     def write(self, path, root, bin_items, tracks, total_frames, guides, folders, W=1920, H=1080, name="Film"):
         L = ["<?xml version='1.0' encoding='utf-8'?>",
              f'<mlt LC_NUMERIC="C" producer="main_bin" version="7.22.0" root="{escape(str(root))}">',
-             f' <profile frame_rate_num="{FPS}" sample_aspect_num="1" display_aspect_den="{H // math.gcd(W, H)}" '
-             f'colorspace="709" progressive="1" description="{W}x{H} {FPS} fps" '
-             f'display_aspect_num="{W // math.gcd(W, H)}" frame_rate_den="1" '
+             f' <profile frame_rate_num="{FPS_ND[0]}" sample_aspect_num="1" display_aspect_den="{H // math.gcd(W, H)}" '
+             f'colorspace="709" progressive="1" description="{W}x{H} {fps_text()} fps" '
+             f'display_aspect_num="{W // math.gcd(W, H)}" frame_rate_den="{FPS_ND[1]}" '
              f'width="{W}" height="{H}" sample_aspect_den="1"/>']
         item_by_kid = {b["kid"]: b for b in bin_items}
         bin_ids = {}
@@ -50,10 +94,10 @@ class KdenliveWriter:
             props.update(b.get("bin_props") or {})
             props["kdenlive:folderid"] = b["folder"]
             props["kdenlive:id"] = b["kid"]
-            L.append(f' <{b["xmltag"]} id="{pid}" out="{tc(b["length"] - 1)}">')
+            L.append(f' <{b["xmltag"]} id="{pid}" out="{_tc(b["length"] - 1)}">')
             L.append(self.props(props))
             L.append(f' </{b["xmltag"]}>')
-        L.append(f' <producer id="producer0" in="00:00:00.000" out="{tc(total_frames)}">')
+        L.append(f' <producer id="producer0" in="00:00:00.000" out="{_tc(total_frames)}">')
         L.append(self.props({"length": 2147483647, "eof": "continue", "resource": "black", "aspect_ratio": 1,
                              "mlt_service": "color", "kdenlive:playlistid": "black_track",
                              "mlt_image_format": "rgba", "set.test_audio": 0}))
@@ -73,7 +117,7 @@ class KdenliveWriter:
             props["xml"] = "was here"
             props["set.test_audio"] = 1 if kind == "video" else 0
             props["set.test_image"] = 0 if kind == "video" else 1
-            L.append(f' <{b["xmltag"]} id="{pid}" out="{tc(b["length"] - 1)}">')
+            L.append(f' <{b["xmltag"]} id="{pid}" out="{_tc(b["length"] - 1)}">')
             L.append(self.props(props))
             L.append(f' </{b["xmltag"]}>')
             return pid
@@ -90,9 +134,9 @@ class KdenliveWriter:
             pos = 0
             for e in sorted(tr["entries"], key=lambda e: e["pos"]):
                 if e["pos"] > pos:
-                    L.append(f'  <blank length="{tc(e["pos"] - pos)}"/>')
+                    L.append(f'  <blank length="{_tc(e["pos"] - pos)}"/>')
                 pid = inst_ids[(e["kid"], "audio" if is_audio else "video", tno)]
-                L.append(f'  <entry producer="{pid}" in="{tc(e["in"])}" out="{tc(e["out"])}">')
+                L.append(f'  <entry producer="{pid}" in="{_tc(e["in"])}" out="{_tc(e["out"])}">')
                 L.append(f'   <property name="kdenlive:id">{e["kid"]}</property>')
                 for fprops, fin, fout in e.get("filters", []):
                     if fin is not None:   # MLT: in/out von Eintrags-Filtern zählen in Quell-Frames
@@ -103,7 +147,7 @@ class KdenliveWriter:
             L.append(" </playlist>")
             L.append(f' <playlist id="{pl2}">' + ('\n  <property name="kdenlive:audio_track">1</property>\n </playlist>'
                                                  if is_audio else "</playlist>"))
-            L.append(f' <tractor id="{tid}" in="00:00:00.000" out="{tc(total_frames - 1)}">')
+            L.append(f' <tractor id="{tid}" in="00:00:00.000" out="{_tc(total_frames - 1)}">')
             tp = {"kdenlive:audio_track": 1} if is_audio else {}
             tp.update({"kdenlive:track_name": tr["name"], "kdenlive:trackheight": 67, "kdenlive:timeline_active": 1,
                        "kdenlive:collapsed": 0, "kdenlive:thumbs_format": "", "kdenlive:audio_rec": ""})
@@ -123,10 +167,11 @@ class KdenliveWriter:
         seq_uuid = "{" + str(uuid.uuid4()) + "}"
         seq_id = self.nid("tractor")
         n_audio = sum(1 for _, a in track_tractors if a)
-        L.append(f' <tractor id="{seq_id}" in="00:00:00.000" out="{tc(total_frames - 1)}">')
-        h, rem = divmod(total_frames, 3600 * FPS)
-        m, rem = divmod(rem, 60 * FPS)
-        s, fr = divmod(rem, FPS)
+        L.append(f' <tractor id="{seq_id}" in="00:00:00.000" out="{_tc(total_frames - 1)}">')
+        fg = fps_ganz()
+        h, rem = divmod(total_frames, 3600 * fg)
+        m, rem = divmod(rem, 60 * fg)
+        s, fr = divmod(rem, fg)
         guide_json = json.dumps([{"comment": g[1], "pos": int(g[0]), "type": g[2]} for g in guides], indent=4,
                                 ensure_ascii=False)
         L.append(self.props({
@@ -173,7 +218,7 @@ class KdenliveWriter:
             "kdenlive:docproperties.generateimageproxy": 0, "kdenlive:docproperties.generateproxy": 0,
             "kdenlive:docproperties.kdenliveversion": "23.08.5",
             "kdenlive:docproperties.opensequences": seq_uuid, "kdenlive:docproperties.previewextension": "",
-            "kdenlive:docproperties.previewparameters": "", "kdenlive:docproperties.profile": (f"atsc_1080p_{FPS}" if (W, H) == (1920, 1080) else ""),
+            "kdenlive:docproperties.previewparameters": "", "kdenlive:docproperties.profile": kdenlive_profil(W, H),
             "kdenlive:docproperties.proxyextension": "", "kdenlive:docproperties.proxyimageminsize": 2000,
             "kdenlive:docproperties.proxyimagesize": 800, "kdenlive:docproperties.proxyminsize": 1000,
             "kdenlive:docproperties.proxyparams": "", "kdenlive:docproperties.proxyresize": 640,
@@ -183,13 +228,13 @@ class KdenliveWriter:
             "kdenlive:documentnotes": _t("Automatisch erzeugt mit Pulsecut"), "xml_retain": 1})
         L.append(self.props(mp))
         for b in bin_items:
-            L.append(f'  <entry producer="{bin_ids[b["kid"]]}" in="00:00:00.000" out="{tc(b["length"] - 1)}"/>')
-        L.append(f'  <entry producer="{seq_id}" in="00:00:00.000" out="{tc(total_frames - 1)}"/>')
+            L.append(f'  <entry producer="{bin_ids[b["kid"]]}" in="00:00:00.000" out="{_tc(b["length"] - 1)}"/>')
+        L.append(f'  <entry producer="{seq_id}" in="00:00:00.000" out="{_tc(total_frames - 1)}"/>')
         L.append(" </playlist>")
         proj = self.nid("tractor")
-        L.append(f' <tractor id="{proj}" in="00:00:00.000" out="{tc(total_frames - 1)}">')
+        L.append(f' <tractor id="{proj}" in="00:00:00.000" out="{_tc(total_frames - 1)}">')
         L.append('  <property name="kdenlive:projectTractor">1</property>')
-        L.append(f'  <track producer="{seq_id}" in="00:00:00.000" out="{tc(total_frames - 1)}"/>')
+        L.append(f'  <track producer="{seq_id}" in="00:00:00.000" out="{_tc(total_frames - 1)}"/>')
         L.append(" </tractor>")
         L.append("</mlt>")
         Path(path).write_text("\n".join(L) + "\n", encoding="utf-8")
@@ -228,7 +273,7 @@ def audio_fade_out(clip_frames, nframes):
 def volume_kf(n, keys, smooth=False):
     """Lautstärke-Effekt mit Keyframes (Frames relativ zum Clipanfang → dB); smooth = weiche Kurve."""
     sep = "~=" if smooth else "="
-    s = ";".join(f"{tc(max(0, min(n - 1, f)))}{sep}{db:.1f}" for f, db in keys)
+    s = ";".join(f"{_tc(max(0, min(n - 1, f)))}{sep}{db:.1f}" for f, db in keys)
     return ({"level": s, "mlt_service": "volume", "kdenlive_id": "volume", "kdenlive:collapsed": 0}, 0, n - 1)
 
 
@@ -242,7 +287,7 @@ def zoom_filter(n, z, WIDTH=1920, HEIGHT=1080):
     w2, h2 = WIDTH * (1 + z), HEIGHT * (1 + z)
     r0 = f"0 0 {WIDTH} {HEIGHT} 1.000000"
     r1 = f"{-(w2 - WIDTH) / 2:.0f} {-(h2 - HEIGHT) / 2:.0f} {w2:.0f} {h2:.0f} 1.000000"
-    a, b = tc(0), tc(n - 1)   # alle animierbaren Parameter brauchen dieselben Keyframes (sonst Kdenlive-Warnung)
+    a, b = _tc(0), _tc(n - 1)   # alle animierbaren Parameter brauchen dieselben Keyframes (sonst Kdenlive-Warnung)
     return ({"rect": f"{a}={r0};{b}={r1}", "rotation": f"{a}=0;{b}=0", "compositing": 0, "distort": 0,
              "rotate_center": 1, "rotate_anchor": f"{a}=0.5 0.5;{b}=0.5 0.5", "mlt_service": "qtblend",
              "kdenlive_id": "qtblend", "kdenlive:collapsed": 0}, 0, n - 1)
@@ -438,7 +483,14 @@ def frame_plan(shots, D, xf):
 
 
 def write_project(pr, path, W=1920, H=1080, mit_marker=True):
-    """Schreibt das Kdenlive-Projekt für die aktuelle Timeline. Gibt (Pfad, Titel, Gesamtframes) zurück."""
+    """Schreibt das Kdenlive-Projekt für die aktuelle Timeline – in der Bildrate des Projekts. Gibt (Pfad, Gesamtframes)
+    zurück."""
+    br = pr.bildrate()
+    with bildrate(br["num"], br["den"]):
+        return _write_project(pr, path, W, H, mit_marker)
+
+
+def _write_project(pr, path, W=1920, H=1080, mit_marker=True):
     info = pr.timeline_info()
     shots = [s for s in info["shots"] if not s["ueber"] and s["dur"] > 0]
     if not shots:
@@ -493,7 +545,7 @@ def write_project(pr, path, W=1920, H=1080, mit_marker=True):
         ent = {"pos": s["e0"], "kid": kids[c.name], "in": s["ein"], "out": s["ein"] + n - 1}
         fl = []
         if s["e0"] == 0:
-            fl.append(fade_from_black(min(FPS, n)))
+            fl.append(fade_from_black(min(fps_ganz(), n)))
         if s["e1"] > total - end_f:
             fl.append(fade_to_black(n, s["e1"] - max(s["e0"], total - end_f)))
         if s["lane"] == 1:   # obere Spur blendet über die untere ein und wieder aus
@@ -580,12 +632,99 @@ FORMATE = {
 }
 
 
-def render_melt(xml, out, fmt, progress=None):
-    """Rendert eine MLT/Kdenlive-Datei mit melt (dieselbe Engine wie Kdenlive)."""
+# Qualitätsstufen für H.264 (CRF: kleiner = besser und größer). Die Hinweise erscheinen in Schritt 10.
+STUFEN = {
+    "web": {"label": "Web / Instagram / WhatsApp", "crf": 23, "ab": 160,
+            "hinweis": "Zum Hochladen und Verschicken. Instagram, Facebook & Co. komprimieren ohnehin neu – mehr "
+                       "Qualität bringt dort kaum etwas, die Datei lädt aber schneller hoch."},
+    "standard": {"label": "Standard", "crf": 20, "ab": 192,
+                 "hinweis": "Gute Qualität zum Ansehen am Fernseher oder Rechner und zum Weitergeben."},
+    "beamer": {"label": "Beamer / Präsentation", "crf": 17, "ab": 256,
+               "hinweis": "Große Leinwand, Beamer, Präsentation: kaum sichtbare Kompression, auch bei viel "
+                          "Bewegung. Für die meisten Beamer reicht 1080p – 4K nur, wenn Beamer oder Fernseher 4K können."},
+    "hoechste": {"label": "Höchste", "crf": 15, "ab": 320,
+                 "hinweis": "Fast verlustfrei, große Dateien. Zum Weiterbearbeiten lieber „Master-Qualität (ProRes)“."},
+}
+CRF_BEREICH = (14, 30)
+QUALI_STANDARD = {"modus": "qualitaet", "stufe": "standard", "crf": 20, "mb": 200}
+
+
+def qualitaet(q):
+    """Gespeicherte Einstellung → saubere Werte: modus (qualitaet|groesse), crf, mb, Audio-kbit/s."""
+    q = dict(QUALI_STANDARD, **(q or {}))
+    crf = int(min(CRF_BEREICH[1], max(CRF_BEREICH[0], round(float(q.get("crf") or 20)))))
+    stufe = q.get("stufe") if q.get("stufe") in STUFEN else ""
+    if stufe and STUFEN[stufe]["crf"] != crf:
+        stufe = ""     # Regler verschoben → eigene Stufe
+    ab = STUFEN[stufe]["ab"] if stufe else (160 if crf >= 23 else 192 if crf >= 19 else 256)
+    mb = float(min(50000, max(1, float(q.get("mb") or 200))))
+    return {"modus": "groesse" if q.get("modus") == "groesse" else "qualitaet", "stufe": stufe, "crf": crf, "mb": mb,
+            "ab": ab}
+
+
+def video_kbps(fmt, D, q):
+    """Bei Zielgröße: Videobitrate (kbit/s), so dass Video + Ton etwa mb Megabyte ergeben."""
+    gesamt = q["mb"] * 8 * 1024 / max(1.0, D)
+    return max(300, int(gesamt - q["ab"]))
+
+
+def schaetzung_mb(fmt, D, q, fps, faktor=1.0):
+    """Ungefähre Dateigröße in MB. Bei „Qualität“ hängt sie vom Material ab (viel Bewegung = größer): Faustwert für
+    Handyvideos, nach dem ersten Rendern mit dem gemessenen Faktor korrigiert. Master (ProRes) etwa nach Datenrate."""
     F = FORMATE[fmt]
+    if fmt == "master":
+        kbps = 220000 * (F["W"] * F["H"] * fps) / (1920 * 1080 * 30) + 1536
+    elif q["modus"] == "groesse":
+        return round(q["mb"])
+    else:
+        px = (F["W"] * F["H"] * fps) / (1920 * 1080 * 30)
+        kbps = 5500 * px ** 0.85 * 2 ** ((23 - q["crf"]) / 6) * faktor + q["ab"]
+    return round(kbps * D / 8 / 1024)
+
+
+def zielgroesse_wie(fmt, D, q, fps, faktor=1.0):
+    """Bei Zielgröße: welcher Qualitätsstufe sie bei diesem Format etwa entspricht (Schlüssel aus STUFEN, „knapp“
+    = sichtbar schlechter als Web, oder "" bei Master)."""
+    if fmt == "master":
+        return ""
+    F = FORMATE[fmt]
+    px = (F["W"] * F["H"] * fps) / (1920 * 1080 * 30)
+    crf = 23 - 6 * math.log2(max(1, video_kbps(fmt, D, q)) / (5500 * px ** 0.85 * faktor))
+    if crf > STUFEN["web"]["crf"] + 3:
+        return "knapp"
+    return min(STUFEN, key=lambda k: abs(STUFEN[k]["crf"] - crf))
+
+
+def melt_args(fmt, D, q):
+    F = FORMATE[fmt]
+    if fmt == "master":
+        return list(F["args"])
+    args = [a for a in F["args"] if not a.startswith(("crf=", "ab="))] + [f"ab={q['ab']}k"]
+    if q["modus"] == "groesse":
+        v = video_kbps(fmt, D, q)
+        return args + [f"vb={v}k", f"maxrate={int(v * 1.5)}k", f"bufsize={int(v * 2)}k"]
+    return args + [f"crf={q['crf']}"]
+
+
+def ffmpeg_venc(fmt, D, q):
+    if fmt == "master":
+        return ["-c:v", "prores_ks", "-profile:v", "3", "-c:a", "pcm_s16le"]
+    v = ["-c:v", "libx264", "-preset", "medium", "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", f"{q['ab']}k",
+         "-movflags", "+faststart"]
+    if q["modus"] == "groesse":
+        k = video_kbps(fmt, D, q)
+        return v + ["-b:v", f"{k}k", "-maxrate", f"{int(k * 1.5)}k", "-bufsize", f"{int(k * 2)}k"]
+    return v + ["-crf", str(q["crf"])]
+
+
+def render_melt(xml, out, fmt, progress=None, q=None, D=None):
+    """Rendert eine MLT/Kdenlive-Datei mit melt (dieselbe Engine wie Kdenlive). Bildrate und Größe kommen aus dem
+    Profil in der Datei (write_project)."""
+    F = FORMATE[fmt]
+    q = qualitaet(q)
     tmp = Path(str(out) + ".teil." + F["ext"])
     cmd = ["melt", "-progress", str(xml), "-consumer", f"avformat:{tmp}", "real_time=-2", "terminate_on_pause=1",
-           f"threads={max(1, (os.cpu_count() or 2))}"] + F["args"]
+           f"threads={max(1, (os.cpu_count() or 2))}"] + melt_args(fmt, D or 60.0, q)
     env = clean_env()
     p = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, env=env, stdin=subprocess.DEVNULL)
     buf, tail = b"", []
@@ -611,8 +750,14 @@ def render_melt(xml, out, fmt, progress=None):
     return out
 
 
-def render_ffmpeg(pr, out, fmt, progress=None):
-    """Ersatz ohne melt: harte Schnitte, Titel, Musik, Originalton – alles mit ffmpeg."""
+def render_ffmpeg(pr, out, fmt, progress=None, q=None):
+    """Ersatz ohne melt: harte Schnitte, Titel, Musik, Originalton – alles mit ffmpeg, in der Bildrate des Projekts."""
+    br = pr.bildrate()
+    with bildrate(br["num"], br["den"]):
+        return _render_ffmpeg(pr, out, fmt, progress, qualitaet(q))
+
+
+def _render_ffmpeg(pr, out, fmt, progress, q):
     F = FORMATE[fmt]
     W, H = F["W"], F["H"]
     info = pr.timeline_info()
@@ -634,12 +779,12 @@ def render_ffmpeg(pr, out, fmt, progress=None):
         if c.needs_bg(W / H):
             vf = (f"split=2[bg][fg];[bg]scale={W}:{H}:force_original_aspect_ratio=increase,crop={W}:{H},"
                   f"boxblur=20:2,eq=brightness=-0.25[b];[fg]scale={W}:{H}:force_original_aspect_ratio=decrease[f];"
-                  f"[b][f]overlay=(W-w)/2:(H-h)/2,fps={FPS},format=yuv420p")
+                  f"[b][f]overlay=(W-w)/2:(H-h)/2,fps={fps_bruch()},format=yuv420p")
         else:
-            vf = f"scale={W}:{H}:force_original_aspect_ratio=decrease,pad={W}:{H}:(ow-iw)/2:(oh-ih)/2,fps={FPS},format=yuv420p"
+            vf = f"scale={W}:{H}:force_original_aspect_ratio=decrease,pad={W}:{H}:(ow-iw)/2:(oh-ih)/2,fps={fps_bruch()},format=yuv420p"
         run(ffmpeg_cmd() + ["-y", "-ss", f"{s['src_f'] / FPS:.3f}", "-i", str(c.path), "-t", f"{d + 0.5:.3f}", "-an",
                             "-filter_complex", vf, "-frames:v", str(n), "-c:v", "libx264", "-preset", "medium",
-                            "-crf", "17", "-g", "50", str(p)])
+                            "-crf", "16" if q["crf"] <= 18 else "17", "-g", str(2 * fps_ganz()), str(p)])
         done[0] += 1
         if progress:
             progress(0.85 * done[0] / len(fp))
@@ -684,9 +829,7 @@ def render_ffmpeg(pr, out, fmt, progress=None):
         last = f"v{j + 1}"
     vchain += f";[{last}]fade=t=in:d=1,fade=t=out:st={D - 1.5:.2f}:d=1.5[vout]"
     ext = F["ext"]
-    venc = ["-c:v", "prores_ks", "-profile:v", "3", "-c:a", "pcm_s16le"] if fmt == "master" else \
-        ["-c:v", "libx264", "-preset", "medium", "-crf", "18", "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "256k",
-         "-movflags", "+faststart"]
+    venc = ffmpeg_venc(fmt, D, q)
     tmp_out = Path(str(out) + ".teil." + ext)
     run(ffmpeg_cmd() + ["-y"] + ins + ["-filter_complex", ";".join(fl) + ";" + vchain, "-map", "[vout]", "-map",
                                        "[aout]"] + venc + ["-t", f"{D:.3f}", str(tmp_out)])

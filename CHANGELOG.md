@@ -6,6 +6,14 @@ tests is published as a [nightly test build](https://github.com/doitux/pulsecut/
 The preview versions 1.0.0–1.0.10 published before have been withdrawn; their changes are listed below by date.
 
 ## Unreleased (nightly)
+- **Frame rate like the videos.** The Kdenlive project and the rendered films used to be 25 fps – with 30 fps phone
+  videos that stuttered, and changing the frame rate in Kdenlive afterwards moved picture and sound apart. Now Pulsecut
+  takes the frame rate most of the videos have (weighted by length, e.g. 30 or 29.97 fps) for the Kdenlive project,
+  the render and the music transitions. Step 10 shows it (“Your videos: 30 fps 100 %”) and lets you choose another one.
+- Step 10, **quality**: presets “Web / Instagram / WhatsApp”, “Standard”, “Projector / presentation” and “Highest”
+  with a short note what each is good for, a slider for your own setting (CRF), and the estimated size next to every
+  format – after the first render adjusted to your footage. Or set a **target size** in MB (at most) instead; Pulsecut
+  says which quality that roughly corresponds to and warns when it is too little.
 - Fixed (step 9): the space bar starts and pauses the preview again, and ←/→ jump between shots – this was broken
   in nightly 39. The space bar now also works right after clicking a button or using the zoom slider.
 - Timeline (step 9), “insert another clip of this scene”: **a click on a clip shows it first** instead of inserting it

@@ -1106,7 +1106,7 @@ class Player {
   }
 }
 
-let TL = null, PLY = null, SEL = null, pps = 0;
+let TL = null, PLY = null, SEL = null, pps = 0, XP = null;
 const ICO = {rechts: "→", links: "←", hoch: "↑", runter: "↓", rein: "⊕", raus: "⊖", ruhig: ""};
 R.timeline = {
   async render(m) {
@@ -1486,15 +1486,67 @@ function tonText(s) {
 /* ── 10 Fertigstellen ──────────────────────────────────────── */
 R.export = {
   async render(m) {
-    const d = await api("/api/exporte");
+    const d = await api("/api/exporte"); XP = d;
     m.innerHTML = `<h1>${T("Fertigstellen")}</h1><p class="lead">${T("Pulsecut schreibt ein <b>Kdenlive-Projekt</b> (zum Feinschneiden – alle Schnitte, Musik mit Taktmarkern, Titel und Originalton auf eigenen Spuren) und rendert den Film in den gewünschten Formaten.")}</p>
       <div class="box col"><label><input type="checkbox" id="xk" checked> ${T("Kdenlive-Projekt (.kdenlive)")}</label>
-        ${Object.entries(d.formate).map(([k, l]) => `<label><input type="checkbox" class="xf" value="${k}" ${k === "1080p" ? "checked" : ""}> ${esc(l)}</label>`).join("")}
-        ${d.melt ? "" : `<div class="hinweis">${T("melt fehlt – gerendert wird mit ffmpeg (harte Schnitte statt Überblendungen).")}</div>`}
-        <div class="weiter"><button class="pri gross" id="xgo">${T("Fertigstellen")}</button></div></div>
+        ${Object.entries(d.formate).map(([k, l]) => `<label class="xfz"><input type="checkbox" class="xf" value="${k}" ${k === "1080p" ? "checked" : ""}> ${esc(l)}<span class="meta xmb" data-f="${k}"></span></label>`).join("")}
+        ${d.melt ? "" : `<div class="hinweis">${T("melt fehlt – gerendert wird mit ffmpeg (harte Schnitte statt Überblendungen).")}</div>`}</div>
+      <div class="box"><div class="row"><b>${T("Qualität")}</b><span class="meta">${T("für die MP4-Formate (H.264) – Master (ProRes) ist immer verlustarm")}</span></div>
+        <div class="row" style="margin-top:8px" id="xstufen"></div>
+        <div class="row xregler"><span class="meta">${T("kleinere Datei")}</span><input type="range" id="xcrf" min="${d.crf_bereich[0]}" max="${d.crf_bereich[1]}" step="1"><span class="meta">${T("bessere Qualität")}</span><span class="meta" id="xcrfv"></span></div>
+        <div class="meta" id="xhinweis" style="margin-top:4px"></div>
+        <div class="row" style="margin-top:10px"><label><input type="checkbox" id="xgr"> ${T("Stattdessen Zielgröße (höchstens):")}</label><input type="number" id="xmb" min="1" max="50000" step="1" style="width:90px"> <span class="meta">${T("MB je Datei")}</span></div>
+        <div class="meta" id="xgrinfo"></div></div>
+      <div class="box row"><b>${T("Bildrate")}</b><span id="xbrw"></span><span class="meta" id="xbrinfo"></span></div>
+      <div class="weiter"><button class="pri gross" id="xgo">${T("Fertigstellen")}</button></div>
       <div id="xjob"></div><div id="xres"></div>`;
     $("#xgo").onclick = async () => { await api("/api/export", {kdenlive: $("#xk").checked, formate: $$(".xf").filter(x => x.checked).map(x => x.value)}); this.onPoll(); };
+    // Regler: rechts = bessere Qualität (kleinerer CRF)
+    const lo = d.crf_bereich[0], hi = d.crf_bereich[1], crfVon = v => lo + hi - v;
+    $("#xcrf").oninput = e => { $("#xcrfv").textContent = this.crfText(crfVon(+e.target.value)); };
+    $("#xcrf").onchange = e => this.setzen({crf: crfVon(+e.target.value)});
+    $("#xgr").onchange = e => this.setzen({modus: e.target.checked ? "groesse" : "qualitaet"});
+    $("#xmb").onchange = e => this.setzen({mb: Math.max(1, +e.target.value || 1)});
+    $$(".xf").forEach(x => x.onchange = () => this.zeigen());
+    this.zeigen();
     this.files(d.dateien);
+  },
+  crfText(crf) { const st = Object.values(XP.stufen).find(s => s.crf === crf); return (st ? st.label + " · " : "") + "CRF " + crf; },
+  async setzen(b) { XP = Object.assign(XP, await api("/api/export/einstellungen", b)); this.zeigen(); },
+  zeigen() {
+    const d = XP, q = d.qualitaet, lo = d.crf_bereich[0], hi = d.crf_bereich[1];
+    const st = $("#xstufen"); if (!st) return;
+    st.innerHTML = seg("xstufe", Object.entries(d.stufen).map(([k, v]) => [k, esc(v.label)]), q.stufe);
+    onSeg($('[data-f="xstufe"]', st), v => this.setzen({stufe: v}));
+    const r = $("#xcrf"); r.value = lo + hi - q.crf; r.disabled = q.modus === "groesse";
+    $("#xcrfv").textContent = this.crfText(q.crf);
+    $("#xhinweis").hidden = q.modus === "groesse";
+    $("#xhinweis").textContent = q.stufe ? d.stufen[q.stufe].hinweis : T("Eigene Einstellung: niedriger CRF = bessere Qualität und größere Datei. 18–20 sieht für die meisten Augen verlustfrei aus.");
+    $("#xgr").checked = q.modus === "groesse"; $("#xmb").value = Math.round(q.mb); $("#xmb").disabled = q.modus !== "groesse";
+    $(".xregler").classList.toggle("aus", q.modus === "groesse"); st.classList.toggle("aus", q.modus === "groesse");
+    const mbText = mb => mb >= 1024 ? komma((mb / 1024).toFixed(1)) + " GB" : Math.max(1, Math.round(mb)) + " MB";
+    const gewaehlt = $$(".xf").filter(x => x.checked).map(x => x.value);
+    $$(".xmb").forEach(x => {
+      const f = x.dataset.f, mb = d.schaetzung[f];
+      x.textContent = mb ? ` · ${q.modus === "groesse" && f !== "master" ? "" : "≈ "}${mbText(mb)}` : "";
+    });
+    let info = "";
+    if (q.modus === "groesse") {
+      const teile = gewaehlt.filter(f => f !== "master").map(f => {
+        const e = d.entspricht[f];
+        return `${esc(d.formate[f].split(" (")[0])}: ${e === "knapp" ? `<b class="warn">${T("sichtbar schlechter als „Web“ – Zielgröße erhöhen oder kleineres Format")}</b>` : T`etwa „${esc(d.stufen[e].label)}“`}`;
+      });
+      info = (teile.length ? T("Das entspricht etwa: ") + teile.join(" · ") + ". " : "") + T("Die Datei wird höchstens etwa so groß – bei ruhigem Material oft kleiner.");
+    } else {
+      info = d.faktor !== 1 ? T("Geschätzte Größen – nach dem letzten Rendern an dein Material angepasst.") : T("Geschätzte Größen – sie hängen vom Material ab (viel Bewegung = größere Datei).");
+    }
+    $("#xgrinfo").innerHTML = info;
+    const br = d.bildrate, w = $("#xbrw");
+    const opts = [["auto", T`Automatisch (${komma(br.auto_text)} fps – wie deine Videos)`]].concat(Object.entries(d.bildraten).map(([k, t]) => [k, komma(t) + " fps"]));
+    w.innerHTML = `<select id="xbr">${opts.map(([k, t]) => `<option value="${k}" ${k === br.wahl ? "selected" : ""}>${esc(t)}</option>`).join("")}</select>`;
+    $("#xbr").onchange = e => this.setzen({bildrate: e.target.value});
+    const vert = Object.entries(br.verteilung || {}).map(([k, a]) => `${komma(d.bildraten[k])} fps ${Math.round(a * 100)} %`).join(" · ");
+    $("#xbrinfo").innerHTML = (vert ? T`Deine Videos: ${vert}.` + " " : "") + (br.auto ? T("Kdenlive-Projekt und Film bekommen dieselbe Bildrate wie die Videos – so ruckelt nichts.") : `<b class="warn">${T("Andere Bildrate als die meisten Videos: Bewegungen können leicht ruckeln.")}</b>`);
   },
   onPoll() { const j = $("#xjob"); if (j) j.innerHTML = jobBox("export", T("Export läuft")); },
   async onJob(n) { if (n === "export") { const d = await api("/api/exporte"); this.files(d.dateien); toast(T("Fertig!")); } },
